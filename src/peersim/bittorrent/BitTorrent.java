@@ -744,16 +744,35 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				if(((BitfieldMsg)event).isRequest && ((BitfieldMsg)event).ack){
 					//System.out.println("process, bitfield_req_ack: sender is "+sender.getID()+", local is "+node.getID());
 					if(alive(sender)){
-						if(addNeighbor(sender)){
+						if(addNeighbor(sender)){ //add sender to local node neighbor
 							Element e = search(sender.getID()); 
-							cache[e.peer].isAlive();
+							cache[e.peer].isAlive(); 
 							swarm[e.peer] = fileStatus;
+							
+							System.out.println("file status: ");
+							for(int i=0; i<fileStatus.length;i++) {
+								System.out.print(fileStatus[i]+" ");
+							}
+							System.out.println("");
+							
 							boolean isSeeder = true;
 							for(int i=0; i<nPieces; i++){
 								rarestPieceSet[i]+= fileStatus[i]; // I update the rarestPieceSet with the pieces of the new node
 								isSeeder = isSeeder && (fileStatus[i]==1); // I check if the new node is a seeder
 							}
 							e.isSeeder = isSeeder;
+							System.out.println("rarestPieceSet: ");
+							for(int i=0; i<rarestPieceSet.length;i++) {
+								System.out.print(rarestPieceSet[i]+" ");
+							}
+							System.out.println("");
+							
+							System.out.println("status: ");
+							for(int i=0; i<status.length;i++) {
+								System.out.print(status[i]+" ");
+							}
+							System.out.println("");
+							
 							ev = new BitfieldMsg(BITFIELD, false, true, node, status, nPieces); //response with ack
 							latency = ((Transport)node.getProtocol(tid)).getLatency(node,sender);
 							EDSimulator.add(latency,ev,sender,pid);
