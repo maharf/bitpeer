@@ -196,6 +196,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/**
 	 *	The Neighbors list.
 	 */
+	//every node or peer has their own cache that list all it neighbor
 	private Neighbor cache[];
 	
 	/**
@@ -1306,21 +1307,24 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			return false;
 		}
 		if(this.tracker == null){ // I'm in the tracker's BitTorrent protocol
+			System.out.println("I'm local node, my ID is: "+this.thisNodeID);
 			for(int i=0; i< nMaxNodes+maxGrowth; i++){
 				if(cache[i].node == null){
 					cache[i].node = neighbor;
 					cache[i].status = 0; //chocked
 					cache[i].interested = -1; //not interested
 					this.nNodes++;
-					
+					System.out.println("add:"+neighbor.getID()+", to tracker cache:"+i);
 					//System.err.println("i: " + i +" nMaxNodes: " + nMaxNodes);
 					return true;
 				}
 			}
 		}
 		else{
+			System.out.println("I'm local node, my ID is: "+this.thisNodeID);
 			if((nNodes+nBitfieldSent) < swarmSize){
 				//System.out.println("I'm the node " + this.thisNodeID + ", trying to add node "+neighbor.getID());
+				System.out.println("this.tracker: "+this.tracker.getID());
 				for(int i=0; i<swarmSize; i++){
 					if(cache[i].node == null){
 						cache[i].node = neighbor;
@@ -1330,7 +1334,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 						byPeer[nNodes].ID = neighbor.getID();
 						sortByPeer();
 						this.nNodes++;
-						//System.out.println(neighbor.getID()+" added!");
+						System.out.println(neighbor.getID()+" added!, position on cache:"+i);
 						return true;
 					}
 				}
