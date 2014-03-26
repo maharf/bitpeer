@@ -613,7 +613,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				numInterestedPeers++;
 				Node sender = ((IntMsg)event).getSender();
 				//System.out.println("process, interested: sender is "+sender.getID()+", local is "+node.getID());
-				int value = ((IntMsg)event).getInt();
+				int value = ((IntMsg)event).getInt(); //this value contains interested segment
 				Element e = search(sender.getID());
 				if(e!=null){
 					cache[e.peer].isAlive();
