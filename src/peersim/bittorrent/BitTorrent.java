@@ -458,14 +458,18 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	}
 	
 	public void nextCycle (Node node, int protocolID) {
+		if(node.getID() == 8){
+			System.out.println("\n--------call the nextCycle method count: "+cycleCount+"---------");
+			System.out.println("nodeID:"+node.getID());
+			System.out.println("sample data:"+sampleData);
+			for(int i=0; i<status.length; i++) {
+				System.out.print(" "+status[i]);
+			}
+			System.out.println("time: "+CommonState.getTime());
+			System.out.println("-----------------------------------------\n");
+			cycleCount++;
+		}
 		
-		System.out.println("\n--------call the nextCycle method count: "+cycleCount+"---------");
-		System.out.println("nodeID:"+node.getID());
-		System.out.println("sample data:"+sampleData);
-		
-		System.out.println("time: "+CommonState.getTime());
-		System.out.println("-----------------------------------------\n");
-		cycleCount++;
 	}
 	
 	/**
