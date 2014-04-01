@@ -93,13 +93,13 @@ public class NetworkInitializer implements Control {
 			//System.out.println("latency of message: "+latency);
 			Object ev = new SimpleMsg(TRACKER, n);
 			EDSimulator.add(latency,ev,tracker,pid);
-			ev = new SimpleEvent(CHOKE_TIME);
+			ev = new SimpleEvent(CHOKE_TIME); //every 10 seconds send CHOKE_TIME
 			EDSimulator.add(10000,ev,n,pid);
-			ev = new SimpleEvent(OPTUNCHK_TIME);
+			ev = new SimpleEvent(OPTUNCHK_TIME); //every 30 seconds send OPTIMISTIC UNCHOKE_TIME
 			EDSimulator.add(30000,ev,n,pid);
-			ev = new SimpleEvent(ANTISNUB_TIME);
+			ev = new SimpleEvent(ANTISNUB_TIME); //every 60 seconds send ANTISNUB_TIME
 			EDSimulator.add(60000,ev,n,pid);
-			ev = new SimpleEvent(CHECKALIVE_TIME);
+			ev = new SimpleEvent(CHECKALIVE_TIME); //every 2 minutes send CHECKALIVE_TIME 
 			EDSimulator.add(120000,ev,n,pid);
 			ev = new SimpleEvent(TRACKERALIVE_TIME);
 			EDSimulator.add(1800000,ev,n,pid);
