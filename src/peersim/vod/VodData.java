@@ -2,7 +2,7 @@ package peersim.vod;
 /*
  * VodData, data type for video on demand data
  */
-public class VodData{
+public class VodData {
 	private String vodID=null;
 	private int vodSize=0;
 	private int numSegment=0;

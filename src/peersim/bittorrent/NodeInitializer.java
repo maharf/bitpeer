@@ -105,8 +105,8 @@ public class NodeInitializer{
 	 *	@param p The BitTorrent protocol
 	 */
 	private void setFileStatus(BitTorrent p){
-		System.out.println("set status of file belonging of node, nodeID: "+p.getThisNodeID());
 		int percentage = getProbability();
+		System.out.println("set filestatus nodeID:"+p.getThisNodeID()+", prob:"+percentage);
 		choosePieces(percentage, p);
 	}
 	
@@ -133,15 +133,39 @@ public class NodeInitializer{
 	 *	@parm percentage The percentage of the downloaded pieces, according to {@link #getProbability()}
 	 *	@param p the BitTorrent protocol
 	 */
+//	private void choosePieces(int percentage, BitTorrent p){
+//		double temp = ((double)p.nPieces/100.0)*percentage; // We use a double to avoid the loss of precision
+//												 // during the division operation
+//		System.out.println("nPieces:"+p.nPieces);
+//		int completed = (int)temp; //integer number of piece to set as completed
+//							  //0 if the peer is a newer
+//		p.setCompleted(completed);
+//		if(percentage == 100)
+//			p.setPeerStatus(1);
+//		int tmp;
+//		//random allocation of completed pieces, each piece
+//		//of data have a value 16
+//		while(completed!=0){
+//			tmp = CommonState.r.nextInt(p.nPieces);
+//			if(p.getStatus(tmp)!=16){
+//				p.setStatus(tmp, 16);
+//				completed--;
+//			}
+////			System.out.println("piece index:"+tmp+": "+p.getStatus(tmp)+" ");
+//		}		
+//	}
 	private void choosePieces(int percentage, BitTorrent p){
 		double temp = ((double)p.nPieces/100.0)*percentage; // We use a double to avoid the loss of precision
 												 // during the division operation
+		System.out.println("nPieces:"+p.nPieces);
 		int completed = (int)temp; //integer number of piece to set as completed
 							  //0 if the peer is a newer
 		p.setCompleted(completed);
 		if(percentage == 100)
 			p.setPeerStatus(1);
 		int tmp;
+		//random allocation of completed pieces, each piece
+		//of data have a value 16
 		while(completed!=0){
 			tmp = CommonState.r.nextInt(p.nPieces);
 			if(p.getStatus(tmp)!=16){
@@ -149,6 +173,7 @@ public class NodeInitializer{
 				completed--;
 			}
 		}
+		
 	}
 	
 	/**
@@ -159,10 +184,13 @@ public class NodeInitializer{
 	 *	@see #PAR_NEWER_DISTR
 	 */
 	private int getProbability(){
-		int value = CommonState.r.nextInt(100);
-		if((value+1)<=seederDistr)
+		int value = CommonState.r.nextInt(100); //Returns the next pseudorandom, uniformly distributed int value from this random number generator's sequence
+		//System.out.println("value1: "+value);
+		if((value+1)<=seederDistr){
 			return 100;
+		}
 		value = CommonState.r.nextInt(100);
+		//System.out.println("value2: "+value);
 		if((value+1)<=newerDistr){
 			return 0; // A newer peer, with probability newer_distr
 		}

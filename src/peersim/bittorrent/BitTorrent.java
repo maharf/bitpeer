@@ -20,11 +20,11 @@
  * {fabrizio.frioli, michele.pedrolli} at studenti dot unitn dot it
  *
  */
-//mahar edited
+
 package peersim.bittorrent;
 
 import peersim.cdsim.CDProtocol;
-import peersim.cdsim.DaemonProtocol;
+import peersim.cdsim.CDState;
 import peersim.core.*;
 import peersim.config.*;
 import peersim.edsim.*;
@@ -197,7 +197,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/**
 	 *	The Neighbors list.
 	 */
-	//every node or peer has their own cache that list all it neighbor
 	private Neighbor cache[];
 	
 	/**
@@ -358,8 +357,12 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 */
 	private Node tracker = null;
 	
-	private long sampleData;
-	private static int cycleCount=0;
+	/*
+	 * variable declaration for segment window
+	 */
+	private static int front=0;
+	private static int rear=0;
+	private static int winLen=0;
 	
 	/**
 	 *	The default constructor. Reads the configuration file and initializes the
@@ -374,6 +377,10 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		numberOfDuplicatedRequests = (int)Configuration.getInt(prefix+"."+PAR_DUP_REQ);
 		maxGrowth = (int)Configuration.getInt(prefix+"."+PAR_MAX_GROWTH);
 		nMaxNodes = Network.getCapacity()-1;
+		//front and rear segment window
+		this.front = -1;
+		this.rear = -1;
+		this.winLen = 5;
 	}
 	
 	/**
@@ -434,6 +441,52 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			cache[i]= new Neighbor();
 		}
 	}
+	/*
+	 * this method is used to handle windowPlayback of segment 
+	 * this method should be called periodically during the time of VOD playing
+	 */
+	public void playbackWindow(int[] sgmtStat){
+		int windowLen=5;
+		int[] windowBuff = new int[windowLen];
+		boolean isEnd=false;
+		boolean isStart=false;
+		if(this.rear==sgmtStat.length-1){
+			isEnd=true;
+			//this.front++;
+		}
+		if(this.front==-1 && this.rear==-1){
+			isStart=true;
+		}
+		if(isStart==true) {
+			//window is empty
+			this.front++;
+			this.rear++;
+		}
+		else{
+			if(isEnd==true){
+				if(this.front<=sgmtStat.length-1){
+					this.front++;
+				}
+			}
+			else{
+				if((this.rear-this.front)==this.winLen-1){
+					this.rear++;
+					this.front++;
+				}
+				else{
+					this.rear++;
+				}
+			}
+		}
+		System.out.println("front: "+this.front+", rear: "+this.rear);
+		int k=0;
+		for(int i=front;i<=rear;i++){
+			windowBuff[k] = sgmtStat[i];
+			System.out.print(windowBuff[k]+" ");
+			k++;
+		}
+		System.out.println(" ");
+	}
 	
 	/**
 	 *	<p>Checks the number of neighbors and if it is equal to 20
@@ -458,17 +511,21 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	}
 	
 	public void nextCycle (Node node, int protocolID) {
-		if(node.getID() == 8){
-			System.out.println("\n--------call the nextCycle method count: "+cycleCount+"---------");
-			System.out.println("nodeID:"+node.getID());
-			System.out.println("sample data:"+sampleData);
-			for(int i=0; i<status.length; i++) {
-				System.out.print(" "+status[i]);
-			}
+		if(node.getID()==8 || node.getID()==9) {
+			int[] sgmt={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};	
+			System.out.println("\n--------call the nextCycle method---------");
 			System.out.println("time: "+CommonState.getTime());
-			System.out.println("-----------------------------------------\n");
-			cycleCount++;
+			System.out.println("this node "+((BitTorrent)node.getProtocol(protocolID)).getThisNodeID());
+			int[] segmentStat = ((BitTorrent)node.getProtocol(protocolID)).status;
+			System.out.println("segment status:");
+			for(int i=0; i<sgmt.length; i++){
+				System.out.print(sgmt[i]+" ");
+			}
+			System.out.println(" ");
+			
+			this.playbackWindow(sgmt);
 		}
+		
 		
 	}
 	
@@ -485,18 +542,11 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		System.out.println("\n--------call the processEvent node---------");
 		System.out.println("local node: "+node.getID()+", sender node: "+((SimpleMsg)event).getSender().getID());
 		System.out.println("number of nNodes: "+nNodes);
-		System.out.println("node event: "+((SimpleEvent)event).getType()+"\n");
 		switch(((SimpleEvent)event).getType()){
-			/*
-			 * This message is sent by a peer to its neighbor that hasn’t been seen for over 
-			 * two minutes. It has a flag indicating if the message is either a request or 
-			 * a reply. If the neighbor is still alive, when it receives this message, 
-			 * it will replies with a KEEP ALIVE response. If the local node doesn’t receive 
-			 * a reply, it will remove the neighbor.
-			 */
+			
 			case KEEP_ALIVE: // 1
 			{
-				System.out.println("-received message: KEEP_ALIVE-");
+				System.out.println("-received message: keep alive-");
 				Node sender = ((IntMsg)event).getSender();
 				int isResponse = ((IntMsg)event).getInt();
 				//System.out.println("process, keep_alive: sender is "+sender.getID()+", local is "+node.getID());
@@ -504,13 +554,10 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				if(e!= null){ //if I know the sender
 					cache[e.peer].isAlive();
 					if(isResponse==0 && alive(sender)){
-						Object msg = new IntMsg(KEEP_ALIVE,node,1); //response KEEP_ALIVE
+						Object msg = new IntMsg(KEEP_ALIVE,node,1);
 						latency = ((Transport)node.getProtocol(tid)).getLatency(node, sender);
 						EDSimulator.add(latency,msg,sender,pid);
 						cache[e.peer].justSent();
-					}
-					else{
-						System.out.println("receive the KEEP_ALIVE response");
 					}
 				}
 				else{
@@ -525,7 +572,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case CHOKE: // 2, CHOKE message.
 			{
-				System.out.println("-received message: CHOKE-");
+				System.out.println("-received message: choke-");
 				Node sender = ((SimpleMsg)event).getSender();
 				//System.out.println("process, choke: sender is "+sender.getID()+", local is "+node.getID());
 				Element e = search(sender.getID());
@@ -544,7 +591,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case UNCHOKE: // 3, UNCHOKE message.
 			{
-				System.out.println("-received message: UNCHOKE-");
+				System.out.println("-received message: unchoke-");
 				
 				Node sender = ((SimpleMsg)event).getSender();
 				//System.out.println("process, unchoke: sender is "+sender.getID()+", local is "+node.getID());
@@ -634,17 +681,15 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case INTERESTED: // 4, INTERESTED message.
 			{
-				System.out.println("-received message: INTERESTED-");
+				System.out.println("-received message: interested-");
 				numInterestedPeers++;
 				Node sender = ((IntMsg)event).getSender();
 				//System.out.println("process, interested: sender is "+sender.getID()+", local is "+node.getID());
-				int value = ((IntMsg)event).getInt(); //this value contains interested segment
+				int value = ((IntMsg)event).getInt();
 				Element e = search(sender.getID());
 				if(e!=null){
 					cache[e.peer].isAlive();
 					cache[e.peer].interested = value;
-					System.out.println("sender node ID:"+sender.getID());
-					System.out.println("local node ID: "+node.getID()+". interested piece:"+value);
 				}
 				else{
 					System.err.println("despite it should never happen, it happened");
@@ -658,7 +703,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case NOT_INTERESTED: // 5, NOT_INTERESTED message.
 			{
-				System.out.println("-received message: NOT_INTERESTED-");
+				System.out.println("-received message: not interested-");
 				numInterestedPeers--;
 				Node sender = ((IntMsg)event).getSender();
 				//System.out.println("process, not_interested: sender is "+sender.getID()+", local is "+node.getID());
@@ -673,7 +718,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case HAVE: // 6, HAVE message.
 			{
-				System.out.println("-received message: HAVE-");
+				System.out.println("-received message: have-");
 				
 				Node sender = ((IntMsg)event).getSender();
 				//System.out.println("process, have: sender is "+sender.getID()+", local is "+node.getID());
@@ -700,7 +745,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case BITFIELD: // 7, BITFIELD message
 			{
-				System.out.println("-received message: BITFIELD-");
+				System.out.println("-received message: bitfield-");
 				System.out.println("isRequest:"+((BitfieldMsg)event).isRequest+", isAck:"+((BitfieldMsg)event).ack);
 				
 				Node sender = ((BitfieldMsg)event).getSender();
@@ -729,30 +774,22 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				/*Response with ACK*/
 				if(!((BitfieldMsg)event).isRequest && ((BitfieldMsg)event).ack){
 					nBitfieldSent--;
-					System.out.println("process, bitfield_resp_ack: sender is "+sender.getID()+", local is "+node.getID());
+					//System.out.println("process, bitfield_resp_ack: sender is "+sender.getID()+", local is "+node.getID());
 					if(alive(sender)){
 						if(addNeighbor(sender)){
 							Element e = search(sender.getID());
 							cache[e.peer].isAlive();
 							swarm[e.peer] = fileStatus;
-							//the values of filestatus replace by 1 when it meet 16 for each segment 
-//							System.out.println("sender node:"+sender.getID()+" status: ");
-//							for(int i=0; i<fileStatus.length;i++) {
-//								System.out.print(fileStatus[i]+" ");
-//							}
-//							System.out.println("");
-							
 							boolean isSeeder = true;
 							for(int i=0; i<nPieces; i++){
 								rarestPieceSet[i]+= fileStatus[i];
 								isSeeder = isSeeder && (fileStatus[i]==1);
 							}
 							e.isSeeder = isSeeder;
-							System.out.println("nNodes: "+nNodes+", lock: "+lock);
-							if(nNodes==10 && !lock){ // I begin to request pieces if the number of neighbor==10
-								System.out.println("nNodes==10 && !lock");
+							
+							if(nNodes==10 && !lock){ // I begin to request pieces
 								lock = true;
-								int piece = getPiece(); //return the next piece to download
+								int piece = getPiece();
 								if(piece == -1)
 									return;
 								lastInterested = piece;
@@ -777,34 +814,23 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				}
 				/*Request with ACK*/
 				if(((BitfieldMsg)event).isRequest && ((BitfieldMsg)event).ack){
-					System.out.println("process, bitfield_req_ack: sender is "+sender.getID()+", local is "+node.getID());
+					//System.out.println("process, bitfield_req_ack: sender is "+sender.getID()+", local is "+node.getID());
 					if(alive(sender)){
-						//increase the value of nNodes each time a node (sender) added to neighbor list
-						if(addNeighbor(sender)){ //add sender to local node neighbor
+						if(addNeighbor(sender)){
 							Element e = search(sender.getID()); 
-							cache[e.peer].isAlive(); 
-							swarm[e.peer] = fileStatus; //file status of the current sender
-													
+							cache[e.peer].isAlive();
+							swarm[e.peer] = fileStatus;
 							boolean isSeeder = true;
 							for(int i=0; i<nPieces; i++){
 								rarestPieceSet[i]+= fileStatus[i]; // I update the rarestPieceSet with the pieces of the new node
-								//if all filestatus of sender == 1 then the sender is seeder
 								isSeeder = isSeeder && (fileStatus[i]==1); // I check if the new node is a seeder
 							}
 							e.isSeeder = isSeeder;
-						
-//							System.out.println("local node:"+node.getID()+" status: ");
-//							for(int i=0; i<status.length;i++) {
-//								System.out.print(status[i]+" ");
-//							}
-//							System.out.println("");
-							
-							//status variable contains filestatus of the local peer
 							ev = new BitfieldMsg(BITFIELD, false, true, node, status, nPieces); //response with ack
 							latency = ((Transport)node.getProtocol(tid)).getLatency(node,sender);
 							EDSimulator.add(latency,ev,sender,pid);
 							cache[e.peer].justSent();
-							if(nNodes==10 && !lock){ // I begin to request pieces if the number of neighbor==10
+							if(nNodes==10 && !lock){ // I begin to request pieces
 								int piece = getPiece();
 								if(piece == -1)
 									return;
@@ -823,7 +849,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 								
 							}
 						}
-						else { //the sender was already in cache
+						else {
 							Element e;
 							if((e = search(sender.getID()))!=null){ // The sender was already in the cache
 								cache[e.peer].isAlive();
@@ -833,7 +859,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 								cache[e.peer].justSent();
 							}
 							else{ // Was not be possible add the sender (nBitfield+nNodes > swarmSize)
-								//too many peers request to handle 
 								ev = new BitfieldMsg(BITFIELD, false, false, node, status, nPieces); //response with nack
 								latency = ((Transport)node.getProtocol(tid)).getLatency(node,sender);
 								EDSimulator.add(latency,ev,sender,pid);
@@ -848,7 +873,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case REQUEST: // 8, REQUEST message.
 			{
-				System.out.println("-received message: REQUEST-");
+				System.out.println("-received message: request-");
 				
 				Object evnt;
 				Node sender = ((IntMsg)event).getSender();
@@ -895,7 +920,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case PIECE: // 9, PIECE message.
 			{
-				System.out.println("-received message: PIECE-");
+				System.out.println("-received message: piece-");
 				Node sender = ((IntMsg)event).getSender();
 				/*	Set the correct value for the local uploading and remote 
 				downloading number of pieces */
@@ -1008,7 +1033,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case CANCEL:
 			{
-				System.out.println("-received message: CANCEL-");
+				System.out.println("-received message: cancel-");
 				Node sender = ((IntMsg)event).getSender();
 				int value = ((IntMsg)event).getInt();
 				requestToServe.remove(sender, value);
@@ -1016,7 +1041,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case PEERSET: // PEERSET message
 			{
-				System.out.println("-received message: PEERSET-");
+				System.out.println("-received message: peerset-");
 				Node sender = ((PeerSetMsg)event).getSender();
 				//System.out.println("process, peerset: sender is "+sender.getID()+", local is "+node.getID());
 				Neighbor n[] = ((PeerSetMsg)event).getPeerSet();
@@ -1025,7 +1050,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				for(int i=0; i<peersetSize; i++){
 					if( n[i]!=null && alive(n[i].node) && search(n[i].node.getID())==null && nNodes+nBitfieldSent <swarmSize-2) {
 						System.out.println("send BITFIELD message to :"+n[i].node.getID());
-						
 						//the first true parameter means isRequest, and the second true is pos.ack
 						ev = new BitfieldMsg(BITFIELD, true, true, node, status, nPieces);
 						latency = ((Transport)node.getProtocol(tid)).getLatency(node,n[i].node);
@@ -1039,7 +1063,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case TRACKER: // TRACKER message
 			{
-				System.out.println("-received message: TRACKER-");
+				System.out.println("-received message: tracker-");
 				int j=0;
 				Node sender = ((SimpleMsg)event).getSender();
 				//System.out.println("process, tracker: sender is "+sender.getID()+", local is "+node.getID());
@@ -1055,7 +1079,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 					for(int i=0; i< nMaxNodes+maxGrowth; i++){
 						if(cache[i].node != null && cache[i].node.getID()!= sender.getID()){
 							tmp[k]=cache[i];
-							System.out.print(tmp[k].node.getID()+" ");
 							k++;
 						}
 					}
@@ -1088,7 +1111,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case CHOKE_TIME: //Every 10 secs.
 			{	
-				System.out.println("-received message: CHOKE_TIME-");
+				System.out.println("-received message: choke time-");
 				n_choke_time++;
 				
 				ev = new SimpleEvent(CHOKE_TIME);
@@ -1160,7 +1183,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case OPTUNCHK_TIME:
 			{
-				System.out.println("-received message: optimis OPTUNCHK_TIME-");
+				System.out.println("-received message: optimis unchock time-");
 				//System.out.println("process, optunchk_time");
 				
 				ev = new SimpleEvent(OPTUNCHK_TIME);
@@ -1179,7 +1202,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case ANTISNUB_TIME:
 			{
-				System.out.println("-received message: ANTISNUB_TIME-");
+				System.out.println("-received message: antistub time-");
 				if(this.peerStatus == 1) // I'm a seeder, I don't update the event
 					return;
 				//System.out.println("process, antisnub_time");
@@ -1196,7 +1219,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case CHECKALIVE_TIME:
 			{
-				System.out.println("-received message: CHECKALIVE_TIME-");
+				System.out.println("-received message: check alive time-");
 				//System.out.println("process, checkalive_time");
 				
 				long now = CommonState.getTime();
@@ -1228,7 +1251,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case TRACKERALIVE_TIME:
 			{
-				System.out.println("-received message: TRACKERALIVE_TIME-");
+				System.out.println("-received message: tracker alive time-");
 				//System.out.println("process, trackeralive_time");
 				if(alive(tracker)){
 					ev = new SimpleEvent(TRACKERALIVE_TIME);
@@ -1241,7 +1264,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				
 			case DOWNLOAD_COMPLETED:
 			{
-				System.out.println("-received message: DOWNLOAD_COMPLETED-");
+				System.out.println("-received message: download completed-");
 				nPiecesUp--;
 			}; break;
 				
@@ -1282,6 +1305,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 */
 	public void setCompleted(int number){
 		this.nPieceCompleted = number;
+		System.out.println("nodeID:"+this.getThisNodeID()+", piece completed:"+this.nPieceCompleted);
 	}
 	
 	/**
@@ -1350,31 +1374,26 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 *	Otherwise, returns true if the node is correctly added to the cache.
 	 */
 	public boolean addNeighbor(Node neighbor){
-		System.out.println("add neighbor :"+neighbor.getID()+", this node:"+this.thisNodeID);
-		sampleData = 100+this.thisNodeID;
 		if(search(neighbor.getID()) !=null){// if already exists
 		//	System.err.println("Node "+neighbor.getID() + " not added, already exist.");
 			return false;
 		}
 		if(this.tracker == null){ // I'm in the tracker's BitTorrent protocol
-			System.out.println("I'm local node, my ID is: "+this.thisNodeID);
 			for(int i=0; i< nMaxNodes+maxGrowth; i++){
 				if(cache[i].node == null){
 					cache[i].node = neighbor;
 					cache[i].status = 0; //chocked
 					cache[i].interested = -1; //not interested
 					this.nNodes++;
-					System.out.println("add:"+neighbor.getID()+", to tracker cache:"+i);
+					
 					//System.err.println("i: " + i +" nMaxNodes: " + nMaxNodes);
 					return true;
 				}
 			}
 		}
 		else{
-			System.out.println("I'm local node, my ID is: "+this.thisNodeID);
 			if((nNodes+nBitfieldSent) < swarmSize){
 				//System.out.println("I'm the node " + this.thisNodeID + ", trying to add node "+neighbor.getID());
-				System.out.println("this.tracker: "+this.tracker.getID());
 				for(int i=0; i<swarmSize; i++){
 					if(cache[i].node == null){
 						cache[i].node = neighbor;
@@ -1384,7 +1403,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 						byPeer[nNodes].ID = neighbor.getID();
 						sortByPeer();
 						this.nNodes++;
-						System.out.println(neighbor.getID()+" added!, position on cache:"+i);
+						//System.out.println(neighbor.getID()+" added!");
 						return true;
 					}
 				}
@@ -1605,17 +1624,8 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 *	@see "Documentation about the BitTorrent module"
 	 *	@return the next piece to download. If the whole file has been requested
 	 *	-1 is returned.
-	 */	
-	
-	//algoritma di method ini harus disesuaikan dengan segment vod yang akan di request
-	//selain rarest first juga dipertimbangkan prioritas urutan dari segment yang akan di download
+	 */
 	private int getPiece(){
-		/*
-		 * algoritma ini pertama kali melakukan pemilihan piece secara random untuk piece < 4
-		 * untuk selanjutnya piece akan dipilih berdasarkan algoritma rarest piece. Dari rarest piece set
-		 * yang didapatkan, piece akan dipilih secara random lagi
-		 */
-		
 		int piece = -1;
 		if(nPieceCompleted < 4){ //Uses random first piece
 			piece = CommonState.r.nextInt(nPieces);
@@ -1640,7 +1650,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			}
 			
 			int rarestPieces[] = new int[nPieces-j]; // the pieces with the less number of occurences\
-			rarestPieces[0] = j;//set the first rarest piece the not owned piece
+			rarestPieces[0] = j;
 			int nValues = 1; // number of pieces less distributed in the network
 			for(int i=j+1; i<nPieces; i++){ // Finds the rarest piece not owned
 				if(rarestPieceSet[i]< rarestPieceSet[rarestPieces[0]] && status[i]==0){ // if strictly less than the current one
@@ -1652,7 +1662,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 					nValues++;
 				}
 			}
-			//dari keseuluruhan rarestPiece yang didapatkan akan dipilih kembali secara random
+			
 			piece = CommonState.r.nextInt(nValues); // one of the less owned pieces
 			return rarestPieces[piece];
 		}
