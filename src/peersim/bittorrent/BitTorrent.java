@@ -511,19 +511,20 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	}
 	
 	public void nextCycle (Node node, int protocolID) {
-		if(node.getID()==8 || node.getID()==9) {
-			int[] sgmt={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};	
+		if(node.getID()==15 || node.getID()==9) {
+			//int[] sgmt={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};	
 			System.out.println("\n--------call the nextCycle method---------");
 			System.out.println("time: "+CommonState.getTime());
 			System.out.println("this node "+((BitTorrent)node.getProtocol(protocolID)).getThisNodeID());
+			
 			int[] segmentStat = ((BitTorrent)node.getProtocol(protocolID)).status;
 			System.out.println("segment status:");
-			for(int i=0; i<sgmt.length; i++){
-				System.out.print(sgmt[i]+" ");
+			for(int i=0; i<status.length; i++){
+				System.out.print(status[i]+" ");
 			}
 			System.out.println(" ");
 			
-			this.playbackWindow(sgmt);
+			this.playbackWindow(status);
 		}
 		
 		
@@ -540,6 +541,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		Object ev;
 		long latency;
 		System.out.println("\n--------call the processEvent node---------");
+		System.out.println("time: "+CommonState.getTime());
 		System.out.println("local node: "+node.getID()+", sender node: "+((SimpleMsg)event).getSender().getID());
 		System.out.println("number of nNodes: "+nNodes);
 		switch(((SimpleEvent)event).getType()){
@@ -1079,6 +1081,12 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 					for(int i=0; i< nMaxNodes+maxGrowth; i++){
 						if(cache[i].node != null && cache[i].node.getID()!= sender.getID()){
 							tmp[k]=cache[i];
+							int[] tempStat = ((BitTorrent)cache[i].node.getProtocol(0)).status;
+//							System.out.println("cache[]:"+cache[i].node.getID());
+//							for(int a=0; a< tempStat.length;a++){
+//								System.out.print(tempStat[a]+" ");
+//							}
+//							System.out.println(" ");
 							k++;
 						}
 					}

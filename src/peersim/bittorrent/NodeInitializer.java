@@ -157,23 +157,30 @@ public class NodeInitializer{
 	private void choosePieces(int percentage, BitTorrent p){
 		double temp = ((double)p.nPieces/100.0)*percentage; // We use a double to avoid the loss of precision
 												 // during the division operation
-		System.out.println("nPieces:"+p.nPieces);
+		
 		int completed = (int)temp; //integer number of piece to set as completed
 							  //0 if the peer is a newer
+		System.out.println("nodeID:"+p.getThisNodeID()+", completed:"+completed+", nPieces:"+p.nPieces);
 		p.setCompleted(completed);
 		if(percentage == 100)
 			p.setPeerStatus(1);
 		int tmp;
+		tmp = CommonState.r.nextInt(p.nPieces);
+		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+tmp);
 		//random allocation of completed pieces, each piece
 		//of data have a value 16
 		while(completed!=0){
-			tmp = CommonState.r.nextInt(p.nPieces);
-			if(p.getStatus(tmp)!=16){
-				p.setStatus(tmp, 16);
-				completed--;
+			p.setStatus(tmp, 16);
+			tmp++; //create sequential order of segment
+			completed--;
+			if(tmp==p.nPieces){
+				break;
 			}
 		}
 		
+		for(int a=0; a<p.nPieces; a++){
+			System.out.print(p.getStatus(a)+" ");
+		}
 	}
 	
 	/**
