@@ -164,20 +164,25 @@ public class NodeInitializer{
 		p.setCompleted(completed);
 		if(percentage == 100)
 			p.setPeerStatus(1);
-		int tmp;
-		tmp = CommonState.r.nextInt(p.nPieces);
-		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+tmp);
+		
+		int pos = 0;
+		//pos-1 is the rear position of playback windows
+		if(completed!=0) {
+			pos = CommonState.r.nextInt(p.nPieces);
+			System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+pos);
+			p.setPlaybackWinPos(pos-1);
+		}
+		
 		//random allocation of completed pieces, each piece
 		//of data have a value 16
 		while(completed!=0){
-			p.setStatus(tmp, 16);
-			tmp++; //create sequential order of segment
+			p.setStatus(pos, 16);
+			pos++; //create sequential order of segment
 			completed--;
-			if(tmp==p.nPieces){
+			if(pos==p.nPieces){ //the last position of pieces
 				break;
 			}
 		}
-		
 		for(int a=0; a<p.nPieces; a++){
 			System.out.print(p.getStatus(a)+" ");
 		}

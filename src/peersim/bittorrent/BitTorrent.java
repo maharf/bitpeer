@@ -356,13 +356,19 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 *	node is the tracker.
 	 */
 	private Node tracker = null;
-	
+	/*
+	 * ================== additional var ===================
+	 */
 	/*
 	 * variable declaration for segment window
 	 */
-	private static int front=0;
-	private static int rear=0;
-	private static int winLen=0;
+	private int front=0;
+	private int rear=0;
+	private int winLen=2;
+	private int initPlaybackPos=0;
+	/*
+	 * =====================================================
+	 */
 	
 	/**
 	 *	The default constructor. Reads the configuration file and initializes the
@@ -377,10 +383,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		numberOfDuplicatedRequests = (int)Configuration.getInt(prefix+"."+PAR_DUP_REQ);
 		maxGrowth = (int)Configuration.getInt(prefix+"."+PAR_MAX_GROWTH);
 		nMaxNodes = Network.getCapacity()-1;
-		//front and rear segment window
-		this.front = -1;
-		this.rear = -1;
-		this.winLen = 5;
 	}
 	
 	/**
@@ -441,52 +443,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			cache[i]= new Neighbor();
 		}
 	}
-	/*
-	 * this method is used to handle windowPlayback of segment 
-	 * this method should be called periodically during the time of VOD playing
-	 */
-	public void playbackWindow(int[] sgmtStat){
-		int windowLen=5;
-		int[] windowBuff = new int[windowLen];
-		boolean isEnd=false;
-		boolean isStart=false;
-		if(this.rear==sgmtStat.length-1){
-			isEnd=true;
-			//this.front++;
-		}
-		if(this.front==-1 && this.rear==-1){
-			isStart=true;
-		}
-		if(isStart==true) {
-			//window is empty
-			this.front++;
-			this.rear++;
-		}
-		else{
-			if(isEnd==true){
-				if(this.front<=sgmtStat.length-1){
-					this.front++;
-				}
-			}
-			else{
-				if((this.rear-this.front)==this.winLen-1){
-					this.rear++;
-					this.front++;
-				}
-				else{
-					this.rear++;
-				}
-			}
-		}
-		System.out.println("front: "+this.front+", rear: "+this.rear);
-		int k=0;
-		for(int i=front;i<=rear;i++){
-			windowBuff[k] = sgmtStat[i];
-			System.out.print(windowBuff[k]+" ");
-			k++;
-		}
-		System.out.println(" ");
-	}
 	
 	/**
 	 *	<p>Checks the number of neighbors and if it is equal to 20
@@ -509,10 +465,82 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			}
 		}
 	}
+	/*
+	 * ========================= additional method ==========================
+	 */
+	/*
+	 * 
+	 */
+	public void setInitPlaybackPos(int pos){
+		this.initPlaybackPos = pos;
+	}
+	
+	public void setPlaybackWinPos(int front){
+		this.front = front;
+		System.out.println("front: "+this.front);
+		//the position of rear pieces greater than allocated pieces
+		if(this.rear+this.winLen-1 > this.nPieces){
+			this.rear = this.nPieces-1;
+		}
+		else{
+			this.rear = this.front + this.winLen-1;
+		}
+		//System.out.println("winLen:"+this.winLen);
+		//System.out.println("playback front:"+this.front+", rear:"+this.rear);
+		
+	}
+	/*
+	 * this method is used to handle windowPlayback of segment 
+	 * this method should be called periodically during the time of VOD playing
+	 */
+	public void playbackWindow(Node node, int pid){
+		int[] windowBuff = new int[this.winLen];
+		boolean isEnd=false;
+		boolean isStart=false;
+		
+		//System.out.println("init pos playback win: "+((BitTorrent)node.getProtocol(pid)).initPlaybackPos);
+					
+		if(this.rear==this.winLen-1){
+			isEnd=true;
+			//this.front++;
+		}
+		if(this.front==-1 && this.rear==-1){
+			isStart=true;
+		}
+		if(isStart==true) {
+			//window is empty
+			this.front++;
+			this.rear++;
+		}
+		else{
+			if(isEnd==true){
+				if(this.front<this.nPieces-1){
+					this.front++;
+				}
+			}
+			else{
+				if((this.rear-this.front)==this.winLen){
+					this.rear++;
+					this.front++;
+				}
+				else{
+					this.rear++;
+				}
+			}
+		}
+		System.out.println("winLen:"+this.winLen);
+		System.out.println("front: "+this.front+", rear: "+this.rear);
+		int k=0;
+		for(int i=front;i<=rear;i++){
+			//windowBuff[k] = this.status[i];
+			System.out.print(this.status[i]+" ");
+			k++;
+		}
+		System.out.println(" ");
+	}
 	
 	public void nextCycle (Node node, int protocolID) {
-		if(node.getID()==15 || node.getID()==9) {
-			//int[] sgmt={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};	
+		if(node.getID()==15) {
 			System.out.println("\n--------call the nextCycle method---------");
 			System.out.println("time: "+CommonState.getTime());
 			System.out.println("this node "+((BitTorrent)node.getProtocol(protocolID)).getThisNodeID());
@@ -523,12 +551,13 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				System.out.print(status[i]+" ");
 			}
 			System.out.println(" ");
-			
-			this.playbackWindow(status);
+			this.playbackWindow(node, protocolID);	
 		}
-		
-		
 	}
+	
+	/*
+	 * ======================================================================
+	 */
 	
 	/**
 	 *	The standard method that processes incoming events.
@@ -543,6 +572,11 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		System.out.println("\n--------call the processEvent node---------");
 		System.out.println("time: "+CommonState.getTime());
 		System.out.println("local node: "+node.getID()+", sender node: "+((SimpleMsg)event).getSender().getID());
+		int [] myStatus = ((BitTorrent)node.getProtocol(pid)).status;
+		for(int i=0; i<myStatus.length; i++){
+			System.out.print(myStatus[i]+" ");
+		}
+		System.out.println(" ");
 		System.out.println("number of nNodes: "+nNodes);
 		switch(((SimpleEvent)event).getType()){
 			
@@ -1313,7 +1347,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 */
 	public void setCompleted(int number){
 		this.nPieceCompleted = number;
-		System.out.println("nodeID:"+this.getThisNodeID()+", piece completed:"+this.nPieceCompleted);
 	}
 	
 	/**
