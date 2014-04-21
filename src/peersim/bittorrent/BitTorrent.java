@@ -366,8 +366,11 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 */
 	private int front=0;
 	private int rear=0;
-	private int winLen=2;
+	private int pbLen=2; //playback length
 	private int initPlaybackPos=0;
+	private int frontBuf=0;
+	private int rearBuf=0;
+	private int cycleCount=0;
 	/*
 	 * =====================================================
 	 */
@@ -471,12 +474,24 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 * ========================= additional method ==========================
 	 */
 	/*
-	 * 
+	 * set window buffer position
+	 */
+	public void setWinBuffferPos(int frontBuf, int rearBuf){
+		this.frontBuf = frontBuf;
+		this.rearBuf =  rearBuf;
+	}
+	
+	/*
+	 * set playback position of playback window 
 	 */
 	public void setInitPlaybackPos(int pos){
 		this.initPlaybackPos = pos;
 	}
 	
+	/*
+	 * set playback window position on window buffer, this position is relative
+	 * depend on the first position of window buffer 
+	 */
 	public void setPlaybackWinPos(int front){
 		this.front = front;
 		System.out.println("front: "+this.front);
@@ -488,11 +503,11 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		}
 		else {
 			//the position of rear pieces greater than allocated pieces
-			if(this.rear+this.winLen-1 > this.nPieces){
+			if(this.rear+this.pbLen-1 > this.nPieces){
 				this.rear = this.nPieces-1;
 			}
 			else{
-				this.rear = this.front + this.winLen-1;
+				this.rear = this.front + this.pbLen-1;
 			}
 		}
 		
@@ -502,7 +517,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 * this method should be called periodically during the time of VOD playing
 	 */
 	public void playbackWindow(Node node, int pid){
-		int[] windowBuff = new int[this.winLen];
+		int[] windowBuff = new int[this.pbLen];
 		boolean isEnd=false;
 		boolean isStart=false;
 		
@@ -516,6 +531,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		}
 		if(isStart==true) {
 			if(isEnd==false) {
+				System.out.println("frontBuf: "+this.frontBuf+", rearBuf: "+this.rearBuf);
 				System.out.println("front: "+this.front+", rear: "+this.rear);
 				int k=0;
 				for(int i=front;i<=rear;i++){
@@ -536,7 +552,31 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		}		
 	}
 	
+	/*
+	 * 
+	 */
+	public void shiftWindowBuf() {
+		int temp;
+		if(this.rearBuf<this.nPieces){
+			for(int i=this.rearBuf; i>=this.frontBuf; i--){
+				temp= status[i+1];
+				status[i+1]=status[i];
+				status[i]=temp;
+			}
+			this.rearBuf++;
+			this.frontBuf++;
+			this.cycleCount=0;
+		}
+	}
+	
+	/*
+	 * this method execute periodically, and tend to update the value of buffer window
+	 * this buffer window will step forward get the segment of VOD 
+	 * (non-Javadoc)
+	 * @see peersim.cdsim.CDProtocol#nextCycle(peersim.core.Node, int)
+	 */
 	public void nextCycle (Node node, int protocolID) {
+		
 		if(node.getID()==4) {
 			System.out.println("\n--------call the nextCycle method---------");
 			System.out.println("time: "+CommonState.getTime());
@@ -548,7 +588,16 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				System.out.print(status[i]+" ");
 			}
 			System.out.println(" ");
-			this.playbackWindow(node, protocolID);	
+			this.playbackWindow(node, protocolID);
+			
+			//modify window buffer
+			this.cycleCount++;
+			//int winBuffLen= this.rearBuf - this.frontBuf;
+			System.out.println("this.cycleCount:"+this.cycleCount);
+			if(this.cycleCount==3){
+				this.cycleCount=0;
+				this.shiftWindowBuf();
+			}
 		}
 	}
 	
@@ -1121,6 +1170,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 							k++;
 						}
 					}
+					
 					System.out.println("\ndestination nodeID: "+sender.getID());
 					ev = new PeerSetMsg(PEERSET, tmp, node);
 					latency = ((Transport)node.getProtocol(tid)).getLatency(node, sender);

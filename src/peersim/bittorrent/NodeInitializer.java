@@ -160,6 +160,9 @@ public class NodeInitializer{
 //		}		
 //	}
 	private void choosePieces(int percentage, BitTorrent p){
+		int frontBuf=0;
+		int rearBuf=0;
+		
 		double temp = ((double)p.nPieces/100.0)*percentage; // We use a double to avoid the loss of precision
 												 // during the division operation
 		
@@ -180,7 +183,7 @@ public class NodeInitializer{
 		}
 		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+(pos-1));
 		p.setPlaybackWinPos(pos);
-		
+		frontBuf = pos;
 		//random allocation of completed pieces, each piece
 		//of data have a value 16
 		while(completed!=0){
@@ -191,6 +194,8 @@ public class NodeInitializer{
 				break;
 			}
 		}
+		rearBuf = pos-1;
+		p.setWinBuffferPos(frontBuf, rearBuf);
 		for(int a=0; a<p.nPieces; a++){
 			System.out.print(p.getStatus(a)+" ");
 		}
