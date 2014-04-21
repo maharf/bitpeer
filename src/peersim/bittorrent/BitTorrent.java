@@ -23,6 +23,8 @@
 
 package peersim.bittorrent;
 
+import com.sun.org.apache.bcel.internal.generic.ISTORE;
+
 import peersim.cdsim.CDProtocol;
 import peersim.cdsim.CDState;
 import peersim.core.*;
@@ -478,15 +480,21 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	public void setPlaybackWinPos(int front){
 		this.front = front;
 		System.out.println("front: "+this.front);
-		//the position of rear pieces greater than allocated pieces
-		if(this.rear+this.winLen-1 > this.nPieces){
-			this.rear = this.nPieces-1;
+//		if(this.front == -2){
+//			this.rear = -2;
+//		}
+		if(front == -1){
+			this.rear = -1;
 		}
-		else{
-			this.rear = this.front + this.winLen-1;
+		else {
+			//the position of rear pieces greater than allocated pieces
+			if(this.rear+this.winLen-1 > this.nPieces){
+				this.rear = this.nPieces-1;
+			}
+			else{
+				this.rear = this.front + this.winLen-1;
+			}
 		}
-		//System.out.println("winLen:"+this.winLen);
-		//System.out.println("playback front:"+this.front+", rear:"+this.rear);
 		
 	}
 	/*
@@ -499,48 +507,37 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		boolean isStart=false;
 		
 		//System.out.println("init pos playback win: "+((BitTorrent)node.getProtocol(pid)).initPlaybackPos);
-					
-		if(this.rear==this.winLen-1){
+		System.out.println("Rear: "+this.rear+", nPieces:"+this.nPieces);			
+		if(this.rear==this.nPieces){
 			isEnd=true;
-			//this.front++;
 		}
-		if(this.front==-1 && this.rear==-1){
+		if(this.front >-2 && this.rear >-2){
 			isStart=true;
 		}
 		if(isStart==true) {
-			//window is empty
-			this.front++;
-			this.rear++;
-		}
-		else{
-			if(isEnd==true){
-				if(this.front<this.nPieces-1){
-					this.front++;
+			if(isEnd==false) {
+				System.out.println("front: "+this.front+", rear: "+this.rear);
+				int k=0;
+				for(int i=front;i<=rear;i++){
+					windowBuff[k] = this.status[i];
+					System.out.print(this.status[i]+" ");
+					k++;
 				}
+				System.out.println(" ");
+				//window is empty
+				this.front++;
+				this.rear++;
 			}
 			else{
-				if((this.rear-this.front)==this.winLen){
-					this.rear++;
-					this.front++;
-				}
-				else{
-					this.rear++;
-				}
+				System.out.println("end of buffer");
+				this.front= this.nPieces;
+				this.rear = this.nPieces;
 			}
-		}
-		System.out.println("winLen:"+this.winLen);
-		System.out.println("front: "+this.front+", rear: "+this.rear);
-		int k=0;
-		for(int i=front;i<=rear;i++){
-			//windowBuff[k] = this.status[i];
-			System.out.print(this.status[i]+" ");
-			k++;
-		}
-		System.out.println(" ");
+		}		
 	}
 	
 	public void nextCycle (Node node, int protocolID) {
-		if(node.getID()==15) {
+		if(node.getID()==4) {
 			System.out.println("\n--------call the nextCycle method---------");
 			System.out.println("time: "+CommonState.getTime());
 			System.out.println("this node "+((BitTorrent)node.getProtocol(protocolID)).getThisNodeID());

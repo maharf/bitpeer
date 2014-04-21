@@ -69,6 +69,11 @@ public class NodeInitializer{
 	 */	
 	private final int pid;
 	
+	/*
+	 * windows length
+	 */
+	private int winLen=2;
+	
 	/**
 	 *	The basic constructor of the class, which reads the parameters
 	 *	from the configuration file.
@@ -169,9 +174,12 @@ public class NodeInitializer{
 		//pos-1 is the rear position of playback windows
 		if(completed!=0) {
 			pos = CommonState.r.nextInt(p.nPieces);
-			System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+pos);
-			p.setPlaybackWinPos(pos-1);
 		}
+		else{
+			pos=-1;
+		}
+		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+(pos-1));
+		p.setPlaybackWinPos(pos);
 		
 		//random allocation of completed pieces, each piece
 		//of data have a value 16
