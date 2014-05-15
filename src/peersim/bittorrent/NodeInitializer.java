@@ -93,7 +93,7 @@ public class NodeInitializer{
 	 */
 	public void initialize(Node n){
 		//node intialization
-		System.out.println("----- node initialization------");
+		System.out.println("----- node initialization, node: "+n.getID()+" ------");
 		Node tracker = Network.get(0);
 		BitTorrent p;
 		p = (BitTorrent)n.getProtocol(pid);
@@ -111,7 +111,7 @@ public class NodeInitializer{
 	 */
 	private void setFileStatus(BitTorrent p){
 		int percentage = getProbability();
-		System.out.println("set filestatus nodeID:"+p.getThisNodeID()+", prob:"+percentage);
+//		System.out.println("set filestatus nodeID:"+p.getThisNodeID()+", prob:"+percentage);
 		choosePieces(percentage, p);
 	}
 	
@@ -168,7 +168,7 @@ public class NodeInitializer{
 		
 		int completed = (int)temp; //integer number of piece to set as completed
 							  //0 if the peer is a newer
-		System.out.println("nodeID:"+p.getThisNodeID()+", completed:"+completed+", nPieces:"+p.nPieces);
+//		System.out.println("nodeID:"+p.getThisNodeID()+", completed:"+completed+", nPieces:"+p.nPieces);
 		p.setCompleted(completed);
 		if(percentage == 100)
 			p.setPeerStatus(1);
@@ -181,8 +181,8 @@ public class NodeInitializer{
 		else{
 			pos=-1;
 		}
-		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+(pos-1));
-		p.setPlaybackWinPos(pos);
+//		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+pos);
+		
 		frontBuf = pos;
 		//random allocation of completed pieces, each piece
 		//of data have a value 16
@@ -194,8 +194,10 @@ public class NodeInitializer{
 				break;
 			}
 		}
-		rearBuf = pos-1;
-		p.setWinBuffferPos(frontBuf, rearBuf);
+		rearBuf = pos;
+		p.setWinBufferPos(frontBuf, rearBuf);
+		p.initPlaybackPos(frontBuf);
+		p.initReqBufferPos(rearBuf+1);
 		for(int a=0; a<p.nPieces; a++){
 			System.out.print(p.getStatus(a)+" ");
 		}

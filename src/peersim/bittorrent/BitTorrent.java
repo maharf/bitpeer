@@ -23,6 +23,8 @@
 
 package peersim.bittorrent;
 
+import java.nio.file.Files;
+
 import com.sun.org.apache.bcel.internal.generic.ISTORE;
 
 import peersim.cdsim.CDProtocol;
@@ -364,12 +366,25 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/*
 	 * variable declaration for segment window
 	 */
+	/*
+	 *  front and rear for window playback
+	 */
 	private int front=0;
 	private int rear=0;
 	private int pbLen=2; //playback length
 	private int initPlaybackPos=0;
-	private int frontBuf=0;
-	private int rearBuf=0;
+	/*
+	 * front and rear for window buffer
+	 */
+	private int frontWinBuf=0;
+	private int rearWinBuf=0;
+	/*
+	 * front and rear for request buffer
+	 */
+	private int frontReqBuf=0;
+	private int rearReqBuf=0;
+	private int reqBufLen=8;
+	
 	private int cycleCount=0;
 	/*
 	 * =====================================================
@@ -476,16 +491,40 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/*
 	 * set window buffer position
 	 */
-	public void setWinBuffferPos(int frontBuf, int rearBuf){
-		this.frontBuf = frontBuf;
-		this.rearBuf =  rearBuf;
+	public void setWinBufferPos(int frontWinBuf, int rearWinBuf){
+		this.frontWinBuf = frontWinBuf;
+		this.rearWinBuf =  rearWinBuf;
 	}
+	
+	public void initReqBufferPos(int frontReqBuf){
+		this.setReqBufferPos(frontReqBuf);
+	}
+	
+	/*
+	 *set request buffer position --> request buffer will collect the requested segments from another
+	 *peer --> for the evaluation you should check if there are any differences in performance due to
+	 *reqBufLen modification 
+	 */
+	public void setReqBufferPos(int frontReqBuf){
+		this.frontReqBuf = frontReqBuf;
+		if(this.frontReqBuf >= this.nPieces){
+			this.frontReqBuf = this.nPieces-1;
+		}
+		this.rearReqBuf = this.frontReqBuf + this.reqBufLen-1;
+		if(this.rearReqBuf >= this.nPieces){
+			this.rearReqBuf = this.nPieces-1;
+		}
+		
+		this.rearReqBuf = rearReqBuf;
+	}
+	
+	
 	
 	/*
 	 * set playback position of playback window 
 	 */
-	public void setInitPlaybackPos(int pos){
-		this.initPlaybackPos = pos;
+	public void initPlaybackPos(int pos){
+		this.setPlaybackWinPos(pos);
 	}
 	
 	/*
@@ -494,23 +533,16 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 */
 	public void setPlaybackWinPos(int front){
 		this.front = front;
-		System.out.println("front: "+this.front);
-//		if(this.front == -2){
-//			this.rear = -2;
-//		}
-		if(front == -1){
+		if(this.front == -1){
 			this.rear = -1;
 		}
 		else {
-			//the position of rear pieces greater than allocated pieces
-			if(this.rear+this.pbLen-1 > this.nPieces){
-				this.rear = this.nPieces-1;
-			}
-			else{
-				this.rear = this.front + this.pbLen-1;
-			}
+			this.rear = this.front + this.pbLen-1;
+			if(this.rear+this.pbLen-1 > this.rearWinBuf){
+				this.rear = this.rearWinBuf-1;
+			}	
 		}
-		
+		System.out.println("setPlayBack win: front:"+this.front+", rear:"+this.rear);
 	}
 	/*
 	 * this method is used to handle windowPlayback of segment 
@@ -520,18 +552,23 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		int[] windowBuff = new int[this.pbLen];
 		boolean isEnd=false;
 		boolean isStart=false;
+		boolean isEmptyBuf=false;
 		
 		//System.out.println("init pos playback win: "+((BitTorrent)node.getProtocol(pid)).initPlaybackPos);
-		System.out.println("Rear: "+this.rear+", nPieces:"+this.nPieces);			
-		if(this.rear==this.nPieces){
+		//System.out.println("rear: "+this.rear+", rearWinBuffer window:"+this.rearWinBuf);			
+		if(this.rear==this.rearWinBuf){
 			isEnd=true;
 		}
 		if(this.front >-2 && this.rear >-2){
 			isStart=true;
 		}
-		if(isStart==true) {
+		if(this.frontWinBuf==-1 && this.rearWinBuf==-1){
+			isEmptyBuf=true;
+		}
+		
+		if(isStart==true && isEmptyBuf==false) {
 			if(isEnd==false) {
-				System.out.println("frontBuf: "+this.frontBuf+", rearBuf: "+this.rearBuf);
+				System.out.println("frontWinBuf: "+this.frontWinBuf+", rearWinBuf: "+this.rearWinBuf);
 				System.out.println("front: "+this.front+", rear: "+this.rear);
 				int k=0;
 				for(int i=front;i<=rear;i++){
@@ -546,25 +583,27 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			}
 			else{
 				System.out.println("end of buffer");
-				this.front= this.nPieces;
-				this.rear = this.nPieces;
+				this.front= this.rearWinBuf;
+				this.rear = this.rearWinBuf;
 			}
 		}		
 	}
 	
 	/*
-	 * 
+	 * shift window buffer
 	 */
 	public void shiftWindowBuf() {
 		int temp;
-		if(this.rearBuf<this.nPieces){
-			for(int i=this.rearBuf; i>=this.frontBuf; i--){
+		
+		if(this.rearWinBuf<this.nPieces-1){
+			System.out.println("this.rearWinBuf: "+this.rearWinBuf);
+			for(int i=this.rearWinBuf; i>=this.frontWinBuf; i--){
 				temp= status[i+1];
 				status[i+1]=status[i];
 				status[i]=temp;
 			}
-			this.rearBuf++;
-			this.frontBuf++;
+			this.rearWinBuf++;
+			this.frontWinBuf++;
 			this.cycleCount=0;
 		}
 	}
@@ -577,7 +616,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 */
 	public void nextCycle (Node node, int protocolID) {
 		
-		if(node.getID()==4) {
+		if(node.getID()==7) {
 			System.out.println("\n--------call the nextCycle method---------");
 			System.out.println("time: "+CommonState.getTime());
 			System.out.println("this node "+((BitTorrent)node.getProtocol(protocolID)).getThisNodeID());
@@ -589,14 +628,14 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			}
 			System.out.println(" ");
 			this.playbackWindow(node, protocolID);
-			
+			System.out.println("buffer request: front:"+this.frontReqBuf+", rear:"+this.rearReqBuf);
 			//modify window buffer
 			this.cycleCount++;
-			//int winBuffLen= this.rearBuf - this.frontBuf;
+			//int winBuffLen= this.rearWinBuf - this.frontWinBuf;
 			System.out.println("this.cycleCount:"+this.cycleCount);
 			if(this.cycleCount==3){
 				this.cycleCount=0;
-				this.shiftWindowBuf();
+				//this.shiftWindowBuf();
 			}
 		}
 	}
@@ -618,11 +657,11 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		System.out.println("\n--------call the processEvent node---------");
 		System.out.println("time: "+CommonState.getTime());
 		System.out.println("local node: "+node.getID()+", sender node: "+((SimpleMsg)event).getSender().getID());
-		int [] myStatus = ((BitTorrent)node.getProtocol(pid)).status;
-		for(int i=0; i<myStatus.length; i++){
-			System.out.print(myStatus[i]+" ");
-		}
-		System.out.println(" ");
+//		int [] myStatus = ((BitTorrent)node.getProtocol(pid)).status;
+//		for(int i=0; i<myStatus.length; i++){
+//			System.out.print(myStatus[i]+" ");
+//		}
+//		System.out.println(" ");
 		System.out.println("number of nNodes: "+nNodes);
 		switch(((SimpleEvent)event).getType()){
 			
@@ -705,7 +744,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 					int piece;
 					while(block != -2){ //while still available request to send
 						if(block < 0){ // No more block to request for the current piece 
-							piece = getPiece();
+							piece = getVodPiece();
 							if(piece == -1){ // no more piece to request
 								break;
 							}
@@ -766,12 +805,21 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				System.out.println("-received message: interested-");
 				numInterestedPeers++;
 				Node sender = ((IntMsg)event).getSender();
-				//System.out.println("process, interested: sender is "+sender.getID()+", local is "+node.getID());
+				System.out.println("process, interested: sender is "+sender.getID()+", local is "+node.getID());
+				System.out.println("neighbor list:");
+				for(int a=0; a<cache.length;a++){
+					if(cache[a].node!=null){
+						System.out.print(cache[a].node.getID()+" ");
+					}
+				}
+				System.out.println();
+				
 				int value = ((IntMsg)event).getInt();
 				Element e = search(sender.getID());
 				if(e!=null){
 					cache[e.peer].isAlive();
 					cache[e.peer].interested = value;
+					System.out.println("interested message from: "+sender.getID()+", value:"+value);
 				}
 				else{
 					System.err.println("despite it should never happen, it happened");
@@ -831,7 +879,14 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				System.out.println("isRequest:"+((BitfieldMsg)event).isRequest+", isAck:"+((BitfieldMsg)event).ack);
 				
 				Node sender = ((BitfieldMsg)event).getSender();
+				//file status of sender
 				int []fileStatus = ((BitfieldMsg)event).getArray();
+				if(sender.getID()==6) {
+					for(int i=0; i<fileStatus.length;i++){
+						System.out.print(fileStatus[i]+" ");
+					}
+					System.out.println(" ");
+				}
 				/*Response with NACK*/
 				if(!((BitfieldMsg)event).isRequest && !((BitfieldMsg)event).ack){
 					Element e = search(sender.getID());
@@ -858,7 +913,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 					nBitfieldSent--;
 					//System.out.println("process, bitfield_resp_ack: sender is "+sender.getID()+", local is "+node.getID());
 					if(alive(sender)){
-						if(addNeighbor(sender)){
+						if(addNeighbor(sender)){ //add sender to this node neighbor and increment nNodes
 							Element e = search(sender.getID());
 							cache[e.peer].isAlive();
 							swarm[e.peer] = fileStatus;
@@ -869,9 +924,11 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 							}
 							e.isSeeder = isSeeder;
 							
-							if(nNodes==10 && !lock){ // I begin to request pieces
+							//nNodes==10
+							if(nNodes==5 && !lock){ // I begin to request pieces
 								lock = true;
-								int piece = getPiece();
+								int piece = getVodPiece();
+								System.out.println("getpiece() to request:"+piece);
 								if(piece == -1)
 									return;
 								lastInterested = piece;
@@ -898,22 +955,45 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				if(((BitfieldMsg)event).isRequest && ((BitfieldMsg)event).ack){
 					//System.out.println("process, bitfield_req_ack: sender is "+sender.getID()+", local is "+node.getID());
 					if(alive(sender)){
-						if(addNeighbor(sender)){
+						if(addNeighbor(sender)){ //add sender to this node neighbor and increment nNodes
 							Element e = search(sender.getID()); 
 							cache[e.peer].isAlive();
 							swarm[e.peer] = fileStatus;
 							boolean isSeeder = true;
+							//calculate the rarest piece for every incoming bitfield message from neighbor
 							for(int i=0; i<nPieces; i++){
 								rarestPieceSet[i]+= fileStatus[i]; // I update the rarestPieceSet with the pieces of the new node
 								isSeeder = isSeeder && (fileStatus[i]==1); // I check if the new node is a seeder
 							}
+							
+							System.out.println("rarest piece:");
+							for(int i=0; i<nPieces; i++){
+								System.out.print(rarestPieceSet[i]+" ");
+							}
+							System.out.println();
+							
+							System.out.println("file Status:");
+							for(int i=0; i<nPieces; i++){
+								System.out.print(fileStatus[i]+" ");
+							}
+							System.out.println();
+							
+							System.out.println("status:");
+							for(int i=0; i<nPieces; i++){
+								System.out.print(status[i]+" ");
+							}
+							System.out.println();
+							
 							e.isSeeder = isSeeder;
 							ev = new BitfieldMsg(BITFIELD, false, true, node, status, nPieces); //response with ack
 							latency = ((Transport)node.getProtocol(tid)).getLatency(node,sender);
 							EDSimulator.add(latency,ev,sender,pid);
 							cache[e.peer].justSent();
-							if(nNodes==10 && !lock){ // I begin to request pieces
-								int piece = getPiece();
+							
+							//nNodes==10
+							if(nNodes==5 && !lock){ // I begin to request pieces
+								int piece = getVodPiece();
+								System.out.println("getpiece() to request:"+piece);
 								if(piece == -1)
 									return;
 								lastInterested = piece;
@@ -1131,7 +1211,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				//for each peer available in peerset, send it BITFIELD message
 				for(int i=0; i<peersetSize; i++){
 					if( n[i]!=null && alive(n[i].node) && search(n[i].node.getID())==null && nNodes+nBitfieldSent <swarmSize-2) {
-						System.out.println("send BITFIELD message to :"+n[i].node.getID());
+						//System.out.println("send BITFIELD message to :"+n[i].node.getID());
 						//the first true parameter means isRequest, and the second true is pos.ack
 						ev = new BitfieldMsg(BITFIELD, true, true, node, status, nPieces);
 						latency = ((Transport)node.getProtocol(tid)).getLatency(node,n[i].node);
@@ -1625,7 +1705,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/**
 	 *	It returns the id of the next block to request. Sends <tt>INTERESTED</tt> if the new
 	 *	block belongs to a new piece.
-	 *	It uses {@link #getBlock()} to get the next block of a piece and calls {@link #getPiece()}
+	 *	It uses {@link #getBlock()} to get the next block of a piece and calls {@link #getVodPiece()}
 	 *	when all the blocks for the {@link #currentPiece} have been requested.
 	 *	@param node the local node
 	 *	@param pid the BitTorrent protocol id
@@ -1639,7 +1719,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			if(block ==-2) // Pending request queue full
 				return -2;
 			
-			int newPiece = getPiece();
+			int newPiece = getVodPiece();
 			if(newPiece == -1){ // no more piece to request
 				return -2;
 			}
@@ -1705,6 +1785,55 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		return encode(lastInterested,j);
 	}
 	
+	/*
+	 * get piece segment of Vod from another peer, combine the rarest piece set algorithm 
+	 * and segment priority, for each segment window request, the buffer will throw away
+	 * the first unused segment with the size of those segment window request
+	 */
+	public int getVodPiece(){
+		
+		int piece = -1;
+		if(nPieceCompleted < 4){ //Uses random first piece
+			piece = CommonState.r.nextInt(nPieces);
+			while(status[piece]==16 || piece == currentPiece) // until the piece is owned
+				piece = CommonState.r.nextInt(nPieces);
+			return piece;
+		}
+		else{ //Uses rarest piece first
+			int j=0;
+			for(; j<nPieces; j++){ // I find the first not owned piece
+				if(status[j]==0){
+					piece = j;
+					if(piece != lastInterested) // teoretically it works because
+												// there should be only one interested 
+												// piece not yet downloaded
+						break;
+				}
+			}
+			if(piece==-1){ // Never entered in the previous 'if' statement; for all
+						   // pieces an has been sent
+				return -1;
+			}
+
+			int rarestPieces[] = new int[nPieces-j]; // the pieces with the less number of occurences\
+			rarestPieces[0] = j;//set the first rarest piece the not owned piece
+			int nValues = 1; // number of pieces less distributed in the network
+			for(int i=j+1; i<nPieces; i++){ // Finds the rarest piece not owned
+				if(rarestPieceSet[i]< rarestPieceSet[rarestPieces[0]] && status[i]==0){ // if strictly less than the current one
+					rarestPieces[0] = i; 
+					nValues = 1;
+				}
+				if(rarestPieceSet[i]==rarestPieceSet[rarestPieces[0]] && status[i]==0){ // if equal
+					rarestPieces[nValues] = i;
+					nValues++;
+				}
+			}
+			//dari keseuluruhan rarestPiece yang didapatkan akan dipilih kembali secara random
+			piece = CommonState.r.nextInt(nValues); // one of the less owned pieces
+			return rarestPieces[piece];
+		}
+	}
+	
 	/**
 	 *	Returns the next correct piece to download. It choose the piece by using the
 	 *	<i>random first</i> and <i>rarest first</i> policy. For the beginning 4 pieces
@@ -1712,6 +1841,9 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 *	@see "Documentation about the BitTorrent module"
 	 *	@return the next piece to download. If the whole file has been requested
 	 *	-1 is returned.
+	 */
+	/*
+	 * this method should be modified to get pieces in the form of VOD segment
 	 */
 	private int getPiece(){
 		int piece = -1;
@@ -1736,9 +1868,9 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 						   // pieces an has been sent
 				return -1;
 			}
-			
+
 			int rarestPieces[] = new int[nPieces-j]; // the pieces with the less number of occurences\
-			rarestPieces[0] = j;
+			rarestPieces[0] = j;//set the first rarest piece the not owned piece
 			int nValues = 1; // number of pieces less distributed in the network
 			for(int i=j+1; i<nPieces; i++){ // Finds the rarest piece not owned
 				if(rarestPieceSet[i]< rarestPieceSet[rarestPieces[0]] && status[i]==0){ // if strictly less than the current one
@@ -1750,7 +1882,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 					nValues++;
 				}
 			}
-			
+			//dari keseuluruhan rarestPiece yang didapatkan akan dipilih kembali secara random
 			piece = CommonState.r.nextInt(nValues); // one of the less owned pieces
 			return rarestPieces[piece];
 		}

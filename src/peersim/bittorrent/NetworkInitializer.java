@@ -81,7 +81,7 @@ public class NetworkInitializer implements Control {
 		for(int i=1; i<Network.size(); i++){
 			System.err.println("chiamate ad addNeighbor " + i);
 			((BitTorrent)Network.get(0).getProtocol(pid)).addNeighbor(Network.get(i));
-			System.out.println("node setup and initilization, nodeID:"+Network.get(i).getID());
+//			System.out.println("node setup and initilization, nodeID:"+Network.get(i).getID());
 			init.initialize(Network.get(i));
 		}
 		//for each nodes available (except tracker) send it some initial message 
