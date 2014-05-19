@@ -69,7 +69,7 @@ public class NetworkInitializer implements Control {
 	
 	public boolean execute() {
 		
-		System.out.println("\n----------- network initialization-----------\n");
+		System.out.println("----------- network initialization-----------");
 		int completed;
 		Node tracker = Network.get(0);
 		
@@ -78,17 +78,51 @@ public class NetworkInitializer implements Control {
 		
 		((BitTorrent)Network.get(0).getProtocol(pid)).initializeTracker();
 		//add neighbor to current tracker
+		System.out.println("add neighbor - network size:"+Network.size());
 		for(int i=1; i<Network.size(); i++){
 			System.err.println("chiamate ad addNeighbor " + i);
 			((BitTorrent)Network.get(0).getProtocol(pid)).addNeighbor(Network.get(i));
 //			System.out.println("node setup and initilization, nodeID:"+Network.get(i).getID());
 			init.initialize(Network.get(i));
 		}
+		System.out.println("tracker cache and neighbor:");
+		Neighbor cache[] =  ((BitTorrent)Network.get(0).getProtocol(pid)).getCache();
+		for(int i=0; i< cache.length; i++){
+			if(cache[i].node!=null){
+				System.out.print(cache[i].node.getID()+" ");
+			}
+			else{
+				System.out.print("null ");
+			}	
+		}
+		System.out.println();
+		System.out.println("get tracker nNodes: "+((BitTorrent)Network.get(0).getProtocol(pid)).getNNodes());
 		//for each nodes available (except tracker) send it some initial message 
-		for(int i=1; i< Network.size(); i++){
+//		for(int i=1; i< Network.size(); i++){
+//			
+//			Node n = Network.get(i);
+//			System.out.println("Send initial configuration and message to nodeID: "+n.getID());
+//			System.out.println("get node:"+n.getID()+", nNodes: "+((BitTorrent)Network.get((int)n.getID()).getProtocol(pid)).getNNodes());
+//			long latency = ((Transport)n.getProtocol(tid)).getLatency(n,tracker);
+//			//System.out.println("latency of message: "+latency);
+//			Object ev = new SimpleMsg(TRACKER, n);
+//			EDSimulator.add(latency,ev,tracker,pid);
+//			ev = new SimpleEvent(CHOKE_TIME);
+//			EDSimulator.add(10000,ev,n,pid);
+//			ev = new SimpleEvent(OPTUNCHK_TIME);
+//			EDSimulator.add(30000,ev,n,pid);
+//			ev = new SimpleEvent(ANTISNUB_TIME);
+//			EDSimulator.add(60000,ev,n,pid);
+//			ev = new SimpleEvent(CHECKALIVE_TIME);
+//			EDSimulator.add(120000,ev,n,pid);
+//			ev = new SimpleEvent(TRACKERALIVE_TIME);
+//			EDSimulator.add(1800000,ev,n,pid);
+//		}
 			
-			Node n = Network.get(i);
-			System.out.println("Send initial configuration and message to nodeID: "+n.getID());
+		// testing for single node request to tracker, node=8
+			Node n = Network.get(4);
+			System.out.println("Send initial configuration and message from nodeID: "+n.getID());
+			System.out.println("get node:"+n.getID()+", nNodes: "+((BitTorrent)Network.get((int)n.getID()).getProtocol(pid)).getNNodes());
 			long latency = ((Transport)n.getProtocol(tid)).getLatency(n,tracker);
 			//System.out.println("latency of message: "+latency);
 			Object ev = new SimpleMsg(TRACKER, n);
@@ -103,7 +137,7 @@ public class NetworkInitializer implements Control {
 			EDSimulator.add(120000,ev,n,pid);
 			ev = new SimpleEvent(TRACKERALIVE_TIME);
 			EDSimulator.add(1800000,ev,n,pid);
-		}
+		
 		return true;
 	}
 	

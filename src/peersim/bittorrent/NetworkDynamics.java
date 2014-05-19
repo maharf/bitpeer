@@ -133,6 +133,7 @@ public class NetworkDynamics implements Control {
 		if (n==0)
 			return;
 		// tracker is up
+		System.out.println("add additional node to tracker: "+n+" times");
 		if (tracker.isUp()) {
 			for (int i = 0; i < n; ++i) {
 				// create a new node
@@ -152,21 +153,22 @@ public class NetworkDynamics implements Control {
 				 * a list of peers. The tracker will respond with a PEERSET message.
 				 * All the related events are also attached to the new node.
 				 */
-				long latency = ((Transport)nodeToBeAdded.getProtocol(tid)).getLatency(nodeToBeAdded,tracker);
 				
-				Object ev = new SimpleMsg(TRACKER, nodeToBeAdded);
-				EDSimulator.add(latency,ev,tracker,pid);
-				
-				ev = new SimpleEvent(CHOKE_TIME);
-				EDSimulator.add(10000,ev,nodeToBeAdded,pid);
-				ev = new SimpleEvent(OPTUNCHK_TIME);
-				EDSimulator.add(30000,ev,nodeToBeAdded,pid);
-				ev = new SimpleEvent(ANTISNUB_TIME);
-				EDSimulator.add(60000,ev,nodeToBeAdded,pid);
-				ev = new SimpleEvent(CHECKALIVE_TIME);
-				EDSimulator.add(120000,ev,nodeToBeAdded,pid);
-				ev = new SimpleEvent(TRACKERALIVE_TIME);
-				EDSimulator.add(1800000,ev,nodeToBeAdded,pid);
+//				long latency = ((Transport)nodeToBeAdded.getProtocol(tid)).getLatency(nodeToBeAdded,tracker);
+//				
+//				Object ev = new SimpleMsg(TRACKER, nodeToBeAdded);
+//				EDSimulator.add(latency,ev,tracker,pid);
+//				
+//				ev = new SimpleEvent(CHOKE_TIME);
+//				EDSimulator.add(10000,ev,nodeToBeAdded,pid);
+//				ev = new SimpleEvent(OPTUNCHK_TIME);
+//				EDSimulator.add(30000,ev,nodeToBeAdded,pid);
+//				ev = new SimpleEvent(ANTISNUB_TIME);
+//				EDSimulator.add(60000,ev,nodeToBeAdded,pid);
+//				ev = new SimpleEvent(CHECKALIVE_TIME);
+//				EDSimulator.add(120000,ev,nodeToBeAdded,pid);
+//				ev = new SimpleEvent(TRACKERALIVE_TIME);
+//				EDSimulator.add(1800000,ev,nodeToBeAdded,pid);
 	
 				// add the new node to the tracker's cache
 				if ( ((BitTorrent)tracker.getProtocol(pid)).addNeighbor(nodeToBeAdded) )

@@ -93,7 +93,7 @@ public class NodeInitializer{
 	 */
 	public void initialize(Node n){
 		//node intialization
-		System.out.println("----- node initialization, node: "+n.getID()+" ------");
+		//System.out.println("----- node initialization, node: "+n.getID()+" ------");
 		Node tracker = Network.get(0);
 		BitTorrent p;
 		p = (BitTorrent)n.getProtocol(pid);
@@ -101,7 +101,7 @@ public class NodeInitializer{
 		p.setThisNodeID(n.getID());
 		setFileStatus(p);
 		setBandwidth(p);
-		System.out.println("\n");
+		//System.out.println("\n");
 	}
 
 	/**
@@ -112,7 +112,7 @@ public class NodeInitializer{
 	private void setFileStatus(BitTorrent p){
 		int percentage = getProbability();
 //		System.out.println("set filestatus nodeID:"+p.getThisNodeID()+", prob:"+percentage);
-		choosePieces(percentage, p);
+		chooseVodPieces(percentage, p);
 	}
 	
 	/**
@@ -159,7 +159,7 @@ public class NodeInitializer{
 ////			System.out.println("piece index:"+tmp+": "+p.getStatus(tmp)+" ");
 //		}		
 //	}
-	private void choosePieces(int percentage, BitTorrent p){
+	private void chooseVodPieces(int percentage, BitTorrent p){
 		int frontBuf=0;
 		int rearBuf=0;
 		
@@ -181,7 +181,7 @@ public class NodeInitializer{
 		else{
 			pos=-1;
 		}
-//		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+pos);
+		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+pos);
 		
 		frontBuf = pos;
 		//random allocation of completed pieces, each piece
@@ -201,6 +201,7 @@ public class NodeInitializer{
 		for(int a=0; a<p.nPieces; a++){
 			System.out.print(p.getStatus(a)+" ");
 		}
+		System.out.println();
 	}
 	
 	/**
