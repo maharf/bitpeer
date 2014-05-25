@@ -20,9 +20,16 @@ protocol.urt.maxdelay 400
 #that the space for the neighbor nodes is enough.
 
 protocol.bittorrent peersim.bittorrent.BitTorrent
+protocol.bittorrent.buffer_ratio 0.5 #ratio of secondary buffer size
+protocol.bittorrent.memory_buff_size 150 #total number memory buffer (primary buffer and secondary buffer included)
+protocol.bittorrent.primary_buff_size 50 #number of primary buffer size in memory buffer size, should be less than memory buffer size 
+protocol.bittorrent.disk_buff_size 200 #this size could be very large than memory buffer
 protocol.bittorrent.file_size 10
-protocol.bittorrent.max_swarm_size 80
-protocol.bittorrent.peerset_size 50
+#protocol.bittorrent.max_swarm_size 80
+#protocol.bittorrent.peerset_size 50
+
+protocol.bittorrent.max_swarm_size 60
+protocol.bittorrent.peerset_size 40
 protocol.bittorrent.duplicated_requests 1
 protocol.bittorrent.transport urt
 protocol.bittorrent.max_growth 20

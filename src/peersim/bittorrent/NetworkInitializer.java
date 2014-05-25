@@ -84,19 +84,26 @@ public class NetworkInitializer implements Control {
 			((BitTorrent)Network.get(0).getProtocol(pid)).addNeighbor(Network.get(i));
 //			System.out.println("node setup and initilization, nodeID:"+Network.get(i).getID());
 			init.initialize(Network.get(i));
+//			System.out.println("node segmen status: ");
+//			int status[] = ((BitTorrent)Network.get(i).getProtocol(pid)).getSegmentStatus();
+//			for(int a=0; a<status.length; a++){
+//				System.out.print(status[a]+" ");
+//			}
+//			System.out.println();
 		}
-		System.out.println("tracker cache and neighbor:");
-		Neighbor cache[] =  ((BitTorrent)Network.get(0).getProtocol(pid)).getCache();
-		for(int i=0; i< cache.length; i++){
-			if(cache[i].node!=null){
-				System.out.print(cache[i].node.getID()+" ");
-			}
-			else{
-				System.out.print("null ");
-			}	
-		}
-		System.out.println();
-		System.out.println("get tracker nNodes: "+((BitTorrent)Network.get(0).getProtocol(pid)).getNNodes());
+//		System.out.println("tracker cache and neighbor:");
+//		Neighbor cache[] =  ((BitTorrent)Network.get(0).getProtocol(pid)).getCache();
+//		System.out.println("nPieces: "+((BitTorrent)Network.get(0).getProtocol(pid)).getNPieces());
+//		for(int i=0; i< cache.length; i++){
+//			if(cache[i].node!=null){
+//				System.out.print(cache[i].node.getID()+" ");
+//			}
+//			else{
+//				System.out.print("null ");
+//			}	
+//		}
+//		System.out.println();
+//		System.out.println("get tracker nNodes: "+((BitTorrent)Network.get(0).getProtocol(pid)).getNNodes());
 		//for each nodes available (except tracker) send it some initial message 
 //		for(int i=1; i< Network.size(); i++){
 //			

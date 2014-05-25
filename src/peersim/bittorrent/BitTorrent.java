@@ -24,6 +24,8 @@
 package peersim.bittorrent;
 
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.lang.Math;
 
 import com.sun.org.apache.bcel.internal.generic.ISTORE;
 
@@ -38,6 +40,21 @@ import peersim.transport.*;
  *	This is the class that implements the BitTorrent module for Peersim
  */
 public class BitTorrent implements EDProtocol, CDProtocol {
+	/*
+	 * additional parameter from config file
+	 */
+	//secondary buffer ratio
+	private static final String BUF_RATIO="buffer_ratio";
+	//memory buffer size
+	private static final String MEM_BUF_SIZE="memory_buff_size";
+	//primary buffer size
+	private static final String PRIM_BUF_SIZE="primary_buff_size";
+	//disk buffer size
+	private static final String DISK_BUF_SIZE="disk_buff_size";
+	/*
+	 * ------------------------------------------
+	 */
+	
 	/**
 	 *	The size in Megabytes of the file being shared.
 	 *	@config
@@ -363,9 +380,25 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/*
 	 * ================== additional var ===================
 	 */
-	/*
-	 * variable declaration for segment window
-	 */
+	
+	private double bufRatio;
+	private int memBufSize;
+	private int diskBufSize;
+	//main memory buffer
+	private int[] memoryBuffer; //index 0=primary_buffer, next index = secondary_buffer
+	//primary buffer
+	private int primaryBufferSize;
+	//list of all buffer position (primary and secondary)
+	private int[][] primBuffPos;
+	private int[][] forwardSecBuffPos;
+	private int[][] backwardSecBuffPos;
+	//secondary memory/ disk buffer
+	private int[] diskBuffer; 
+			
+	private int[] mainBuff;
+	private int[] forwardSecBuff;
+	private int[] backwardSecBuff;
+	
 	/*
 	 *  front and rear for window playback
 	 */
@@ -403,6 +436,14 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		numberOfDuplicatedRequests = (int)Configuration.getInt(prefix+"."+PAR_DUP_REQ);
 		maxGrowth = (int)Configuration.getInt(prefix+"."+PAR_MAX_GROWTH);
 		nMaxNodes = Network.getCapacity()-1;
+		bufRatio = (double)Configuration.getDouble(prefix+"."+BUF_RATIO);
+		memBufSize = (int)Configuration.getInt(prefix+"."+MEM_BUF_SIZE);
+		diskBufSize = (int)Configuration.getInt(prefix+"."+DISK_BUF_SIZE);
+		primaryBufferSize = (int)Configuration.getInt(prefix+"."+PRIM_BUF_SIZE);
+		//System.out.println("bufRatio: "+bufRatio+", memBufSize:"+memBufSize+", diskBufSize:"+diskBufSize);
+		//memory and disk buffer initilization
+		this.initBufferAllocation();
+		
 	}
 	
 	/**
@@ -488,7 +529,87 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/*
 	 * ========================= additional method ==========================
 	 */
-	
+	/*
+	 * initial allocation of memory buffer and disk buffer
+	 */
+	public void initBufferAllocation(){
+		//memory buffer allocation
+		System.out.println("memory buffer size:"+this.memBufSize);
+		System.out.println("primary buffer size:"+this.primaryBufferSize);
+		int idx=1;
+		int secBufSize = this.memBufSize - primaryBufferSize;
+		int tempSecBufSize[] = new int[20]; //temporary var to save list of secondary buffer size
+		int fbSecBufSize=secBufSize/2;
+		int a=0;
+		while(fbSecBufSize>1){
+			fbSecBufSize = (int)((double) (secBufSize/2) * Math.pow((double)this.bufRatio,(double)idx));
+			tempSecBufSize[a] = fbSecBufSize;
+			System.out.println(fbSecBufSize+", ratio: "+Math.pow((double)this.bufRatio,(double)idx));
+			a++;
+			idx++;
+		}
+		System.out.println("\nidx buff:"+idx);
+		this.forwardSecBuffPos = new int [idx][2];
+		this.backwardSecBuffPos = new int [idx][2];
+		this.primBuffPos = new int[1][2];
+		//index of playback offset in primary buffer
+		int pbOffset = (memBufSize/2)-(primaryBufferSize/2);
+		this.primBuffPos[0][0]=pbOffset-1;
+		this.primBuffPos[0][1]=pbOffset+primaryBufferSize-1;
+		System.out.println(this.primBuffPos[0][0]+","+this.primBuffPos[0][1]);
+		
+		System.out.println("tempSecBufSize:");
+		for(int i=0; i<a; i++){
+			System.out.println(tempSecBufSize[i]);
+		}
+		System.out.println("forward secondary buffer");
+		//init position of forward secondary buffer
+		for(int i=0; i<a; i++){
+			if(i==0){
+				this.forwardSecBuffPos[i][0]=this.primBuffPos[0][1]+1;
+				this.forwardSecBuffPos[i][1]=this.primBuffPos[0][1]+tempSecBufSize[i]+1;
+			}
+			else{
+				this.forwardSecBuffPos[i][0]=this.forwardSecBuffPos[i-1][1]+1;
+				if(i==(a-1)){
+					this.forwardSecBuffPos[i][1]=this.memBufSize-1;
+				}
+				else{
+					this.forwardSecBuffPos[i][1]=this.forwardSecBuffPos[i-1][1]+tempSecBufSize[i];
+				}
+			}
+			System.out.println(this.forwardSecBuffPos[i][0]+" "+this.forwardSecBuffPos[i][1]);
+		}
+		System.out.println("backward secondary buffer");
+		//init position of backward secondary buffer
+		for(int i=0; i<a; i++){
+			if(i==0){
+				this.backwardSecBuffPos[i][1]=this.primBuffPos[0][0]-1;
+				this.backwardSecBuffPos[i][0]=this.primBuffPos[0][0]-tempSecBufSize[i];
+			}
+			else{
+				this.backwardSecBuffPos[i][1]=this.backwardSecBuffPos[i-1][0]-1;
+				if(i==(a-1)){
+					this.backwardSecBuffPos[i][0]=0;
+				}
+				else{
+					this.backwardSecBuffPos[i][0]=this.backwardSecBuffPos[i-1][0]-tempSecBufSize[i];
+				}
+			}
+			System.out.println(this.backwardSecBuffPos[i][0]+" "+this.backwardSecBuffPos[i][1]);
+		}
+		
+		
+		
+		//disk buffer allocation
+		this.diskBuffer = new int[this.diskBufSize];
+		
+	}
+	//get  segment status owned by current peer
+	public int[] getSegmentStatus(){
+		return status;
+	}
+	//get neighbor peer of the current peer
 	public Neighbor[] getCache(){
 		return this.cache;
 	}
@@ -501,6 +622,9 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		this.rearWinBuf =  rearWinBuf;
 	}
 	
+	/*
+	 * initial request of buffer position
+	 */
 	public void initReqBufferPos(int frontReqBuf){
 		this.setReqBufferPos(frontReqBuf);
 	}
@@ -1878,8 +2002,9 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 * the first unused segment with the size of those segment window request
 	 */
 	public int getVodPiece(){
-		System.out.println("getVodPiece()");
+		System.out.println("get swarm:");
 		for(int i=0; i<swarmSize; i++){// send the interested message to those  
+			System.out.println("peerID: "+i);
 			// nodes which have that piece
 			for(int j=0; j<swarm[i].length; j++){
 				System.out.print(swarm[i][j]+" ");
@@ -1889,7 +2014,8 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		
 		
 		int piece = -1;
-		if(nPieceCompleted < 4){ //Uses random first piece
+		System.out.println("nPieceCompleted: "+nPieceCompleted);
+		if(nPieceCompleted < 4){ //Uses random first piece, if there are no piece in local node
 			piece = CommonState.r.nextInt(nPieces);
 			while(status[piece]==16 || piece == currentPiece) // until the piece is owned
 				piece = CommonState.r.nextInt(nPieces);
@@ -1898,7 +2024,9 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		else{ //Uses rarest piece first
 			int j=0;
 			for(; j<nPieces; j++){ // I find the first not owned piece
+				//System.out.println("nPieces:"+nPieces+", status[j]: "+status[j]);
 				if(status[j]==0){
+					//System.out.println("j: "+j+", lastinterested: "+lastInterested);
 					piece = j;
 					if(piece != lastInterested) // teoretically it works because
 												// there should be only one interested 
@@ -1910,8 +2038,14 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 						   // pieces an has been sent
 				return -1;
 			}
-
+			
 			int rarestPieces[] = new int[nPieces-j]; // the pieces with the less number of occurences\
+			System.out.println("rarestPieces[]: ");
+			for(int a=0; a<rarestPieces.length; a++) {
+				System.out.print(rarestPieces[a]+" ");
+			}
+			System.out.println();
+			
 			rarestPieces[0] = j;//set the first rarest piece the not owned piece
 			int nValues = 1; // number of pieces less distributed in the network
 			for(int i=j+1; i<nPieces; i++){ // Finds the rarest piece not owned
@@ -1954,6 +2088,7 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 			for(; j<nPieces; j++){ // I find the first not owned piece
 				if(status[j]==0){
 					piece = j;
+					System.out.println("piece:"+piece+", lastInterested:"+lastInterested);
 					if(piece != lastInterested) // teoretically it works because
 												// there should be only one interested 
 												// piece not yet downloaded

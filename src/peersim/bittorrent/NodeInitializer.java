@@ -198,10 +198,12 @@ public class NodeInitializer{
 		p.setWinBufferPos(frontBuf, rearBuf);
 		p.initPlaybackPos(frontBuf);
 		p.initReqBufferPos(rearBuf+1);
+		//status of node
 		for(int a=0; a<p.nPieces; a++){
 			System.out.print(p.getStatus(a)+" ");
 		}
 		System.out.println();
+		
 	}
 	
 	/**
