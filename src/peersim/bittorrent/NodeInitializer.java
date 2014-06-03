@@ -80,9 +80,10 @@ public class NodeInitializer{
 	 *	@param prefix the configuration prefix for this class
 	 */
 	public NodeInitializer(String prefix){
-		pid = Configuration.getPid(prefix+"."+PAR_PROT);
-		newerDistr = Configuration.getInt(prefix+"."+PAR_NEWER_DISTR);
-		seederDistr = Configuration.getInt(prefix+"."+PAR_SEEDER_DISTR);
+		this.pid = Configuration.getPid(prefix+"."+PAR_PROT);
+		this.newerDistr = Configuration.getInt(prefix+"."+PAR_NEWER_DISTR);
+		this.seederDistr = Configuration.getInt(prefix+"."+PAR_SEEDER_DISTR);
+		
 	}
 	
 	/**
@@ -112,7 +113,7 @@ public class NodeInitializer{
 	private void setFileStatus(BitTorrent p){
 		int percentage = getProbability();
 //		System.out.println("set filestatus nodeID:"+p.getThisNodeID()+", prob:"+percentage);
-		chooseVodPieces(percentage, p);
+		chooseVodSegment(percentage, p);
 	}
 	
 	/**
@@ -123,6 +124,7 @@ public class NodeInitializer{
 	 *	</p>
 	 *	@param p The BitTorrent protocol
 	 */
+	//disesuaikan dengan kondisi di kampus, cek untuk peak traffic-nya 
 	private void setBandwidth(BitTorrent p){
 		int value = CommonState.r.nextInt(4);
 		switch(value){
@@ -159,50 +161,176 @@ public class NodeInitializer{
 ////			System.out.println("piece index:"+tmp+": "+p.getStatus(tmp)+" ");
 //		}		
 //	}
-	private void chooseVodPieces(int percentage, BitTorrent p){
+	/*
+	 * VoD segment initialization,
+	 */
+	private void chooseVodSegment(int percentage, BitTorrent p){
 		int frontBuf=0;
 		int rearBuf=0;
+		int pBufPart=0; //primary buffer percentage of initial segment
+		int bsBufPart=0; //backward secondary buffer percentage of initial segment
 		
+		
+		int playbackWin = p.getPlaybackWin();
+		int[][] pBuffPos = p.getBsBuffPos();
+		int[][] fsBuffPos = p.getFsBuffPos();
+		int[][] bsBuffPos= p.getBsBuffPos();
 		double temp = ((double)p.nPieces/100.0)*percentage; // We use a double to avoid the loss of precision
 												 // during the division operation
 		
 		int completed = (int)temp; //integer number of piece to set as completed
 							  //0 if the peer is a newer
-//		System.out.println("nodeID:"+p.getThisNodeID()+", completed:"+completed+", nPieces:"+p.nPieces);
+		int partPos=0;
+		
 		p.setCompleted(completed);
 		if(percentage == 100)
-			p.setPeerStatus(1);
+			p.setPeerStatus(1); //current peer have completed segment
 		
-		int pos = 0;
+		int numCompleted= completed;
+		int firstSegmentPos = 0;
+		//init default value (0) to segmentStatus, memoryBuffer, and diskBuffer
+		for(int i=0; i<p.nPieces; i++){
+			p.setSegmentStat(i, 0);
+		}
+		for(int i=0; i<p.getMemoryBufferSize(); i++){
+			p.setMemoryBuff(i, 0);
+		}
+		for(int i=0; i<p.getDiskBufferSize(); i++){
+			p.setDiskBuff(i, 0);
+		}
+		
 		//pos-1 is the rear position of playback windows
-		if(completed!=0) {
-			pos = CommonState.r.nextInt(p.nPieces);
-		}
-		else{
-			pos=-1;
-		}
-		System.out.println("nodeId:"+p.getThisNodeID()+", playback start: "+pos);
 		
-		frontBuf = pos;
-		//random allocation of completed pieces, each piece
-		//of data have a value 16
-		while(completed!=0){
-			p.setStatus(pos, 16);
-			pos++; //create sequential order of segment
-			completed--;
-			if(pos==p.nPieces){ //the last position of pieces
-				break;
+		if(completed!=0) {
+			
+			
+//			System.out.println("\nchooseVodPieces nodeID:"+p.getThisNodeID()+", completed:"+completed+", nPieces:"+p.nPieces+", partPos:"+partPos);
+//			System.out.println("memory size:"+p.getMemoryBufferSize());
+//			System.out.println("disk size:"+p.getDiskBufferSize());
+			
+			int segmentIdx=0; //segment index
+			int pbOffset = p.getPlaybackOffset(); //playback offset (memory index)
+			int mbSize = p.getMemoryBufferSize(); //memory buffer size
+			System.out.println("playback offset position:"+p.getPlaybackOffset());
+			System.out.println("1. completed: "+completed);
+			//initialize segment in primary buffer and forward secondary buffer continuously
+			if(percentage == 100){
+				segmentIdx = p.nPieces-(mbSize - pbOffset);
+				firstSegmentPos = segmentIdx;
+				System.out.println("segment position:"+segmentIdx);
+				for(int i=pbOffset; i<mbSize; i++){
+					p.setMemoryBuff(i, segmentIdx);
+					p.setSegmentStat(segmentIdx, 1);
+					if(completed==0){
+						break;
+					}
+					segmentIdx++;
+					completed--;
+				}
+			}
+			else{
+				segmentIdx = CommonState.r.nextInt(completed); //choose segment index randomly as the first position of playback offset
+				System.out.println("segment position:"+segmentIdx);
+				firstSegmentPos = segmentIdx;
+				for(int i=pbOffset; i<mbSize; i++){
+					p.setMemoryBuff(i, segmentIdx);
+					p.setSegmentStat(segmentIdx, 1);
+					if(completed==0){
+						break;
+					}
+					segmentIdx++;
+					completed--;
+				}
+			}
+			System.out.println("2. completed: "+completed);
+			segmentIdx=firstSegmentPos;
+			System.out.println("segment position:"+segmentIdx);
+			//initialize segment in backward secondary buffer sequentially
+			if(completed!=0){	
+				//System.out.println("backward secondary buffer position:");
+				for(int i=pbOffset; i>=0;i--){
+					p.setMemoryBuff(i, segmentIdx);
+					p.setSegmentStat(segmentIdx, 1);
+					if(completed==0){
+						break;
+					}
+					segmentIdx--;
+					completed--;
+				}
+			}
+			System.out.println("3. completed: "+completed);
+			System.out.println("segment position:"+segmentIdx);
+			//initialize segment in disk buffer
+			if(completed!=0){
+				int diskIdx=0;
+				for(int i=segmentIdx; i>=0;){
+					if(p.getDiskBuffer(diskIdx)==0){
+						p.setDiskBuff(diskIdx, i);
+						p.setSegmentStat(i, 1);
+						if(completed==0){
+							break;
+						}
+						diskIdx++;
+						completed--;
+						i--;
+					}
+					else{
+						diskIdx++;
+					}
+				}
 			}
 		}
-		rearBuf = pos;
+		System.out.println("segment number left:"+completed);
+		int[] memoryBuffer=p.getAllMemoryBuffer();
+		System.out.println("memory buffer:");
+		for(int i=0; i<memoryBuffer.length; i++){
+			System.out.print(memoryBuffer[i]+" ");
+		}
+		System.out.println();
+		int[] diskBuffer=p.getAllDiskBuffer();
+		System.out.println("disk buffer:");
+		for(int i=0; i<diskBuffer.length; i++){
+			System.out.print(diskBuffer[i]+" ");
+		}
+		System.out.println();
+		int[] segmentStat=p.getAllSegmentStatus();
+		System.out.println("segment status:");
+		for(int i=0; i<segmentStat.length; i++){
+			System.out.print(segmentStat[i]+" ");
+		}
+		System.out.println();
+		
+		
+		//random allocation of completed pieces, each piece
+		//of data have a value 16
+//		while(completed!=0){
+//			p.setStatus(pos, 16);
+//			//p.setMemoryBuff(pos, 16);
+//			p.setSegmentStat(pos,1);
+//			pos++; //create sequential order of segment
+//			completed--;
+//			if(pos==p.nPieces){ //the last position of pieces
+//				break;
+//			}
+//		}
+//		rearBuf = pos;
 		p.setWinBufferPos(frontBuf, rearBuf);
 		p.initPlaybackPos(frontBuf);
 		p.initReqBufferPos(rearBuf+1);
-		//status of node
-		for(int a=0; a<p.nPieces; a++){
-			System.out.print(p.getStatus(a)+" ");
-		}
-		System.out.println();
+		//print out status of node
+//		if(p.getThisNodeID()==4){
+//			System.out.println("get status:");
+//			for(int a=0; a<p.nPieces; a++){
+//				System.out.print(p.getStatus(a)+" ");
+//			}
+//			System.out.println();
+//			System.out.println("get segment status:");
+//			for(int a=0; a<p.nPieces; a++){
+//				System.out.print(p.getSegmentStatus(a)+" ");
+//			}
+//			System.out.println();
+//		}
+			
 		
 	}
 	

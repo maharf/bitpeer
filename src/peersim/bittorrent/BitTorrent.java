@@ -27,8 +27,6 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.lang.Math;
 
-import com.sun.org.apache.bcel.internal.generic.ISTORE;
-
 import peersim.cdsim.CDProtocol;
 import peersim.cdsim.CDState;
 import peersim.core.*;
@@ -43,6 +41,8 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/*
 	 * additional parameter from config file
 	 */
+	//playback window
+	private static final String PLAYBACK_SIZE="playback_size";
 	//secondary buffer ratio
 	private static final String BUF_RATIO="buffer_ratio";
 	//memory buffer size
@@ -380,24 +380,27 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	/*
 	 * ================== additional var ===================
 	 */
-	
+	private int playbackWin;
+	private int playbackSegmentNum;
 	private double bufRatio;
-	private int memBufSize;
-	private int diskBufSize;
+	private int memBufSize; //memory buffer size
+	private int diskBufSize; //disk buffer size
 	//main memory buffer
 	private int[] memoryBuffer; //index 0=primary_buffer, next index = secondary_buffer
-	//primary buffer
-	private int primaryBufferSize;
-	//list of all buffer position (primary and secondary)
-	private int[][] primBuffPos;
-	private int[][] forwardSecBuffPos;
-	private int[][] backwardSecBuffPos;
 	//secondary memory/ disk buffer
-	private int[] diskBuffer; 
-			
-	private int[] mainBuff;
-	private int[] forwardSecBuff;
-	private int[] backwardSecBuff;
+	private int[] diskBuffer;
+	//primary buffer
+	private int pBufferSize;
+	//list of all buffer position (primary and secondary)
+	private int playbackOffset; //playback offset position
+	private int[][] pBuffPos;
+	private int[][] fsBuffPos;
+	private int[][] bsBuffPos;
+	 
+	//status of segment or piece of VoD data	
+	private int[] segmentStat;
+	//private int[] forwardSecBuff;
+	//private int[] backwardSecBuff;
 	
 	/*
 	 *  front and rear for window playback
@@ -419,6 +422,275 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	private int reqBufLen=8;
 	
 	private int cycleCount=0;
+	
+	/*
+	 * ========================= additional method ==========================
+	 */
+	
+	/*
+	 * initial allocation of memory buffer and disk buffer
+	 */
+	public void initBufferAllocation(){
+		//memory buffer allocation
+		System.out.println("memory buffer size:"+this.memBufSize);
+		System.out.println("primary buffer size:"+this.pBufferSize);
+		int idx=1;
+		int secBufSize = this.memBufSize - pBufferSize;
+		int tempSecBufSize[] = new int[20]; //temporary var to save list of secondary buffer size
+		int fbSecBufSize=secBufSize/2;
+		int a=0;
+		while(fbSecBufSize>1){
+			fbSecBufSize = (int)((double) (secBufSize/2) * Math.pow((double)this.bufRatio,(double)idx));
+			tempSecBufSize[a] = fbSecBufSize;
+			System.out.println(fbSecBufSize+", ratio: "+Math.pow((double)this.bufRatio,(double)idx));
+			a++;
+			idx++;
+		}
+		System.out.println("\nidx buff:"+idx);
+		this.fsBuffPos = new int [idx][2];
+		this.bsBuffPos = new int [idx][2];
+		this.pBuffPos = new int[1][2];
+		//index of playback offset in primary buffer
+		int pbOffset = (memBufSize/2)-(pBufferSize/2);
+		this.pBuffPos[0][0]=pbOffset-1;
+		this.playbackOffset = pbOffset-1;
+		this.pBuffPos[0][1]=pbOffset+pBufferSize-1;
+		System.out.println(this.pBuffPos[0][0]+","+this.pBuffPos[0][1]);
+		
+		System.out.println("tempSecBufSize:");
+		for(int i=0; i<a; i++){
+			System.out.println(tempSecBufSize[i]);
+		}
+		System.out.println("forward secondary buffer");
+		//init position of forward secondary buffer
+		for(int i=0; i<a; i++){
+			if(i==0){
+				this.fsBuffPos[i][0]=this.pBuffPos[0][1]+1;
+				this.fsBuffPos[i][1]=this.pBuffPos[0][1]+tempSecBufSize[i]+1;
+			}
+			else{
+				this.fsBuffPos[i][0]=this.fsBuffPos[i-1][1]+1;
+				if(i==(a-1)){
+					this.fsBuffPos[i][1]=this.memBufSize-1;
+				}
+				else{
+					this.fsBuffPos[i][1]=this.fsBuffPos[i-1][1]+tempSecBufSize[i];
+				}
+			}
+			System.out.println(this.fsBuffPos[i][0]+" "+this.fsBuffPos[i][1]);
+		}
+		System.out.println("backward secondary buffer");
+		//init position of backward secondary buffer
+		for(int i=0; i<a; i++){
+			if(i==0){
+				this.bsBuffPos[i][1]=this.pBuffPos[0][0]-1;
+				this.bsBuffPos[i][0]=this.pBuffPos[0][0]-tempSecBufSize[i];
+			}
+			else{
+				this.bsBuffPos[i][1]=this.bsBuffPos[i-1][0]-1;
+				if(i==(a-1)){
+					this.bsBuffPos[i][0]=0;
+				}
+				else{
+					this.bsBuffPos[i][0]=this.bsBuffPos[i-1][0]-tempSecBufSize[i];
+				}
+			}
+			System.out.println(this.bsBuffPos[i][0]+" "+this.bsBuffPos[i][1]);
+		}
+		
+		
+		//disk buffer allocation
+		this.diskBuffer = new int[this.diskBufSize];
+		
+	}
+	/*
+	 * set window buffer position
+	 */
+	public void setWinBufferPos(int frontWinBuf, int rearWinBuf){
+		this.frontWinBuf = frontWinBuf;
+		this.rearWinBuf =  rearWinBuf;
+	}
+	//set memory buffer
+	public void setMemoryBuff(int index, int value){
+		this.memoryBuffer[index]=value;
+	}
+	//set disk buffer
+	public void setDiskBuff(int index, int value){
+		this.diskBuffer[index]=value;
+	}
+	public void setSegmentStat(int index, int value){
+		this.segmentStat[index]=value;
+	}
+	//get memory buffer
+	public int getMemoryBuffer(int index){
+		return this.memoryBuffer[index];
+	}
+	//get disk buffer
+	public int getDiskBuffer(int index){
+		return this.diskBuffer[index];
+	}
+	//get all memory buffer
+	public int[] getAllMemoryBuffer(){
+		return this.memoryBuffer;
+	}
+	//get all disk buffer
+	public int[] getAllDiskBuffer(){
+		return this.diskBuffer;
+	}
+	//get playback offset position
+	public int getPlaybackOffset(){
+		return this.playbackOffset;
+	}
+	//get memory buffer size
+	public int getMemoryBufferSize(){
+		return this.memBufSize;
+	}
+	//get disk buffer size
+	public int getDiskBufferSize(){
+		return this.diskBufSize;
+	}
+	//get playback win
+	public int getPlaybackWin(){
+		return this.playbackWin;
+	}
+	//get primary buffer position
+	public int[][] getPBuffPos(){
+		return this.pBuffPos;
+	}
+	//get forward secondary buffer position
+	public int[][] getFsBuffPos(){
+		return this.fsBuffPos;
+	}
+	//get backward secondary buffer position
+	public int[][] getBsBuffPos(){
+		return this.bsBuffPos;
+	}
+	
+	//get  segment status owned by current peer
+	public int[] getAllSegmentStatus(){
+		return segmentStat;
+	}
+	public int getSegmentStatus(int index){
+		return segmentStat[index];
+	}
+	//get neighbor peer of the current peer
+	public Neighbor[] getCache(){
+		return this.cache;
+	}
+	
+	/*
+	 * initial request of buffer position
+	 */
+	public void initReqBufferPos(int frontReqBuf){
+		this.setReqBufferPos(frontReqBuf);
+	}	
+	
+	/*
+	 * set playback position of playback window 
+	 */
+	public void initPlaybackPos(int pos){
+		this.setPlaybackWinPos(pos);
+	}
+
+	/*
+	 *set request buffer position --> request buffer will collect the requested segments from another
+	 *peer --> for the evaluation you should check if there are any differences in performance due to
+	 *reqBufLen modification 
+	 */
+	public void setReqBufferPos(int frontReqBuf){
+		this.frontReqBuf = frontReqBuf;
+		if(this.frontReqBuf >= this.nPieces){
+			this.frontReqBuf = this.nPieces-1;
+		}
+		this.rearReqBuf = this.frontReqBuf + this.reqBufLen-1;
+		if(this.rearReqBuf >= this.nPieces){
+			this.rearReqBuf = this.nPieces-1;
+		}
+		
+		this.rearReqBuf = rearReqBuf;
+	}
+	
+	/*
+	 * set playback window position on window buffer, this position is relative
+	 * depend on the first position of window buffer 
+	 */
+	public void setPlaybackWinPos(int front){
+		this.front = front;
+		if(this.front == -1){
+			this.rear = -1;
+		}
+		else {
+			this.rear = this.front + this.pbLen-1;
+			if(this.rear+this.pbLen-1 > this.rearWinBuf){
+				this.rear = this.rearWinBuf-1;
+			}	
+		}
+		//System.out.println("setPlayBack win: front:"+this.front+", rear:"+this.rear);
+	}
+	/*
+	 * this method is used to handle windowPlayback of segment 
+	 * this method should be called periodically during the time of VOD playing
+	 */
+	public void playbackWindow(Node node, int pid){
+		int[] windowBuff = new int[this.pbLen];
+		boolean isEnd=false;
+		boolean isStart=false;
+		boolean isEmptyBuf=false;
+		
+		//System.out.println("init pos playback win: "+((BitTorrent)node.getProtocol(pid)).initPlaybackPos);
+		//System.out.println("rear: "+this.rear+", rearWinBuffer window:"+this.rearWinBuf);			
+		if(this.rear==this.rearWinBuf){
+			isEnd=true;
+		}
+		if(this.front >-2 && this.rear >-2){
+			isStart=true;
+		}
+		if(this.frontWinBuf==-1 && this.rearWinBuf==-1){
+			isEmptyBuf=true;
+		}
+		
+		if(isStart==true && isEmptyBuf==false) {
+			if(isEnd==false) {
+				System.out.println("frontWinBuf: "+this.frontWinBuf+", rearWinBuf: "+this.rearWinBuf);
+				System.out.println("front: "+this.front+", rear: "+this.rear);
+				int k=0;
+				for(int i=front;i<=rear;i++){
+					windowBuff[k] = this.status[i];
+					System.out.print(this.status[i]+" ");
+					k++;
+				}
+				System.out.println(" ");
+				//window is empty
+				this.front++;
+				this.rear++;
+			}
+			else{
+				System.out.println("end of buffer");
+				this.front= this.rearWinBuf;
+				this.rear = this.rearWinBuf;
+			}
+		}		
+	}
+	
+	/*
+	 * shift window buffer
+	 */
+	public void shiftWindowBuf() {
+		int temp;
+		
+		if(this.rearWinBuf<this.nPieces-1){
+			System.out.println("this.rearWinBuf: "+this.rearWinBuf);
+			for(int i=this.rearWinBuf; i>=this.frontWinBuf; i--){
+				temp= status[i+1];
+				status[i+1]=status[i];
+				status[i]=temp;
+			}
+			this.rearWinBuf++;
+			this.frontWinBuf++;
+			this.cycleCount=0;
+		}
+	}
+	
 	/*
 	 * =====================================================
 	 */
@@ -429,20 +701,23 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 	 *	@param prefix the component prefix declared in the configuration file
 	 */
 	public BitTorrent(String prefix){ // Used for the tracker's protocol
-		tid = Configuration.getPid(prefix+"."+PAR_TRANSPORT);
-		nPieces = (int)((Configuration.getInt(prefix+"."+PAR_SIZE))*1000000/256000);
-		swarmSize = (int)Configuration.getInt(prefix+"."+PAR_SWARM);
-		peersetSize = (int)Configuration.getInt(prefix+"."+PAR_PEERSET_SIZE);
-		numberOfDuplicatedRequests = (int)Configuration.getInt(prefix+"."+PAR_DUP_REQ);
-		maxGrowth = (int)Configuration.getInt(prefix+"."+PAR_MAX_GROWTH);
-		nMaxNodes = Network.getCapacity()-1;
-		bufRatio = (double)Configuration.getDouble(prefix+"."+BUF_RATIO);
-		memBufSize = (int)Configuration.getInt(prefix+"."+MEM_BUF_SIZE);
-		diskBufSize = (int)Configuration.getInt(prefix+"."+DISK_BUF_SIZE);
-		primaryBufferSize = (int)Configuration.getInt(prefix+"."+PRIM_BUF_SIZE);
+		this.tid = Configuration.getPid(prefix+"."+PAR_TRANSPORT);
+		this.nPieces = (int)((Configuration.getInt(prefix+"."+PAR_SIZE))*1000000/256000);
+		this.swarmSize = (int)Configuration.getInt(prefix+"."+PAR_SWARM);
+		this.peersetSize = (int)Configuration.getInt(prefix+"."+PAR_PEERSET_SIZE);
+		this.numberOfDuplicatedRequests = (int)Configuration.getInt(prefix+"."+PAR_DUP_REQ);
+		this.maxGrowth = (int)Configuration.getInt(prefix+"."+PAR_MAX_GROWTH);
+		this.nMaxNodes = Network.getCapacity()-1;
+		this.bufRatio = (double)Configuration.getDouble(prefix+"."+BUF_RATIO);
+		this.memBufSize = (int)Configuration.getInt(prefix+"."+MEM_BUF_SIZE);
+		this.diskBufSize = (int)Configuration.getInt(prefix+"."+DISK_BUF_SIZE);
+		this.pBufferSize = (int)Configuration.getInt(prefix+"."+PRIM_BUF_SIZE);
+		this.playbackWin = (int)Configuration.getInt(prefix+"."+PLAYBACK_SIZE)/256;
+		//this.playbackSegmentNum=this.playbackWin/256;
 		//System.out.println("bufRatio: "+bufRatio+", memBufSize:"+memBufSize+", diskBufSize:"+diskBufSize);
 		//memory and disk buffer initilization
 		this.initBufferAllocation();
+		System.out.println("nPieces: "+nPieces+", playback_window:"+this.playbackWin);
 		
 	}
 	
@@ -524,216 +799,6 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 				latency = ((Transport)node.getProtocol(tid)).getLatency(node, tracker);
 				EDSimulator.add(latency,ev,tracker,pid);
 			}
-		}
-	}
-	/*
-	 * ========================= additional method ==========================
-	 */
-	/*
-	 * initial allocation of memory buffer and disk buffer
-	 */
-	public void initBufferAllocation(){
-		//memory buffer allocation
-		System.out.println("memory buffer size:"+this.memBufSize);
-		System.out.println("primary buffer size:"+this.primaryBufferSize);
-		int idx=1;
-		int secBufSize = this.memBufSize - primaryBufferSize;
-		int tempSecBufSize[] = new int[20]; //temporary var to save list of secondary buffer size
-		int fbSecBufSize=secBufSize/2;
-		int a=0;
-		while(fbSecBufSize>1){
-			fbSecBufSize = (int)((double) (secBufSize/2) * Math.pow((double)this.bufRatio,(double)idx));
-			tempSecBufSize[a] = fbSecBufSize;
-			System.out.println(fbSecBufSize+", ratio: "+Math.pow((double)this.bufRatio,(double)idx));
-			a++;
-			idx++;
-		}
-		System.out.println("\nidx buff:"+idx);
-		this.forwardSecBuffPos = new int [idx][2];
-		this.backwardSecBuffPos = new int [idx][2];
-		this.primBuffPos = new int[1][2];
-		//index of playback offset in primary buffer
-		int pbOffset = (memBufSize/2)-(primaryBufferSize/2);
-		this.primBuffPos[0][0]=pbOffset-1;
-		this.primBuffPos[0][1]=pbOffset+primaryBufferSize-1;
-		System.out.println(this.primBuffPos[0][0]+","+this.primBuffPos[0][1]);
-		
-		System.out.println("tempSecBufSize:");
-		for(int i=0; i<a; i++){
-			System.out.println(tempSecBufSize[i]);
-		}
-		System.out.println("forward secondary buffer");
-		//init position of forward secondary buffer
-		for(int i=0; i<a; i++){
-			if(i==0){
-				this.forwardSecBuffPos[i][0]=this.primBuffPos[0][1]+1;
-				this.forwardSecBuffPos[i][1]=this.primBuffPos[0][1]+tempSecBufSize[i]+1;
-			}
-			else{
-				this.forwardSecBuffPos[i][0]=this.forwardSecBuffPos[i-1][1]+1;
-				if(i==(a-1)){
-					this.forwardSecBuffPos[i][1]=this.memBufSize-1;
-				}
-				else{
-					this.forwardSecBuffPos[i][1]=this.forwardSecBuffPos[i-1][1]+tempSecBufSize[i];
-				}
-			}
-			System.out.println(this.forwardSecBuffPos[i][0]+" "+this.forwardSecBuffPos[i][1]);
-		}
-		System.out.println("backward secondary buffer");
-		//init position of backward secondary buffer
-		for(int i=0; i<a; i++){
-			if(i==0){
-				this.backwardSecBuffPos[i][1]=this.primBuffPos[0][0]-1;
-				this.backwardSecBuffPos[i][0]=this.primBuffPos[0][0]-tempSecBufSize[i];
-			}
-			else{
-				this.backwardSecBuffPos[i][1]=this.backwardSecBuffPos[i-1][0]-1;
-				if(i==(a-1)){
-					this.backwardSecBuffPos[i][0]=0;
-				}
-				else{
-					this.backwardSecBuffPos[i][0]=this.backwardSecBuffPos[i-1][0]-tempSecBufSize[i];
-				}
-			}
-			System.out.println(this.backwardSecBuffPos[i][0]+" "+this.backwardSecBuffPos[i][1]);
-		}
-		
-		
-		
-		//disk buffer allocation
-		this.diskBuffer = new int[this.diskBufSize];
-		
-	}
-	//get  segment status owned by current peer
-	public int[] getSegmentStatus(){
-		return status;
-	}
-	//get neighbor peer of the current peer
-	public Neighbor[] getCache(){
-		return this.cache;
-	}
-	
-	/*
-	 * set window buffer position
-	 */
-	public void setWinBufferPos(int frontWinBuf, int rearWinBuf){
-		this.frontWinBuf = frontWinBuf;
-		this.rearWinBuf =  rearWinBuf;
-	}
-	
-	/*
-	 * initial request of buffer position
-	 */
-	public void initReqBufferPos(int frontReqBuf){
-		this.setReqBufferPos(frontReqBuf);
-	}
-	
-	/*
-	 *set request buffer position --> request buffer will collect the requested segments from another
-	 *peer --> for the evaluation you should check if there are any differences in performance due to
-	 *reqBufLen modification 
-	 */
-	public void setReqBufferPos(int frontReqBuf){
-		this.frontReqBuf = frontReqBuf;
-		if(this.frontReqBuf >= this.nPieces){
-			this.frontReqBuf = this.nPieces-1;
-		}
-		this.rearReqBuf = this.frontReqBuf + this.reqBufLen-1;
-		if(this.rearReqBuf >= this.nPieces){
-			this.rearReqBuf = this.nPieces-1;
-		}
-		
-		this.rearReqBuf = rearReqBuf;
-	}
-	
-	
-	
-	/*
-	 * set playback position of playback window 
-	 */
-	public void initPlaybackPos(int pos){
-		this.setPlaybackWinPos(pos);
-	}
-	
-	/*
-	 * set playback window position on window buffer, this position is relative
-	 * depend on the first position of window buffer 
-	 */
-	public void setPlaybackWinPos(int front){
-		this.front = front;
-		if(this.front == -1){
-			this.rear = -1;
-		}
-		else {
-			this.rear = this.front + this.pbLen-1;
-			if(this.rear+this.pbLen-1 > this.rearWinBuf){
-				this.rear = this.rearWinBuf-1;
-			}	
-		}
-		//System.out.println("setPlayBack win: front:"+this.front+", rear:"+this.rear);
-	}
-	/*
-	 * this method is used to handle windowPlayback of segment 
-	 * this method should be called periodically during the time of VOD playing
-	 */
-	public void playbackWindow(Node node, int pid){
-		int[] windowBuff = new int[this.pbLen];
-		boolean isEnd=false;
-		boolean isStart=false;
-		boolean isEmptyBuf=false;
-		
-		//System.out.println("init pos playback win: "+((BitTorrent)node.getProtocol(pid)).initPlaybackPos);
-		//System.out.println("rear: "+this.rear+", rearWinBuffer window:"+this.rearWinBuf);			
-		if(this.rear==this.rearWinBuf){
-			isEnd=true;
-		}
-		if(this.front >-2 && this.rear >-2){
-			isStart=true;
-		}
-		if(this.frontWinBuf==-1 && this.rearWinBuf==-1){
-			isEmptyBuf=true;
-		}
-		
-		if(isStart==true && isEmptyBuf==false) {
-			if(isEnd==false) {
-				System.out.println("frontWinBuf: "+this.frontWinBuf+", rearWinBuf: "+this.rearWinBuf);
-				System.out.println("front: "+this.front+", rear: "+this.rear);
-				int k=0;
-				for(int i=front;i<=rear;i++){
-					windowBuff[k] = this.status[i];
-					System.out.print(this.status[i]+" ");
-					k++;
-				}
-				System.out.println(" ");
-				//window is empty
-				this.front++;
-				this.rear++;
-			}
-			else{
-				System.out.println("end of buffer");
-				this.front= this.rearWinBuf;
-				this.rear = this.rearWinBuf;
-			}
-		}		
-	}
-	
-	/*
-	 * shift window buffer
-	 */
-	public void shiftWindowBuf() {
-		int temp;
-		
-		if(this.rearWinBuf<this.nPieces-1){
-			System.out.println("this.rearWinBuf: "+this.rearWinBuf);
-			for(int i=this.rearWinBuf; i>=this.frontWinBuf; i--){
-				temp= status[i+1];
-				status[i+1]=status[i];
-				status[i]=temp;
-			}
-			this.rearWinBuf++;
-			this.frontWinBuf++;
-			this.cycleCount=0;
 		}
 	}
 	
@@ -2152,6 +2217,9 @@ public class BitTorrent implements EDProtocol, CDProtocol {
 		
 		((BitTorrent)prot).byBandwidth = new Element[swarmSize];
 		((BitTorrent)prot).status = new int[nPieces];
+		((BitTorrent)prot).segmentStat = new int[nPieces];
+		((BitTorrent)prot).memoryBuffer = new int[this.memBufSize];
+		((BitTorrent)prot).diskBuffer = new int[this.diskBufSize];
 		((BitTorrent)prot).pieceStatus = new int[16];
 		for(int i=0; i<16;i++)
 			((BitTorrent)prot).pieceStatus[i] = -1;

@@ -80,7 +80,7 @@ public class NetworkInitializer implements Control {
 		//add neighbor to current tracker
 		System.out.println("add neighbor - network size:"+Network.size());
 		for(int i=1; i<Network.size(); i++){
-			System.err.println("chiamate ad addNeighbor " + i);
+			//System.err.println("chiamate ad addNeighbor " + i);
 			((BitTorrent)Network.get(0).getProtocol(pid)).addNeighbor(Network.get(i));
 //			System.out.println("node setup and initilization, nodeID:"+Network.get(i).getID());
 			init.initialize(Network.get(i));
